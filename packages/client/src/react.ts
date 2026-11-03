@@ -1,11 +1,31 @@
 // React hooks over the shared client, used alike by the web app and the
 // Android app. React and TanStack Query are peers: each app brings its own.
 import type { BalconyClient, Session } from "@balcony/contracts";
-import { QueryClient, useMutation } from "@tanstack/react-query";
+import { ORPCError } from "@orpc/client";
+import { createTanstackQueryUtils } from "@orpc/tanstack-query";
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { createSessionList, isUnauthorized } from "./index.ts";
 import type { Connection, ConnectionState, SessionListView } from "./index.ts";
+import {
+  earliestId,
+  joinTranscript,
+  liveTranscript,
+  pagingAnchor,
+} from "./transcript.ts";
+import type { TranscriptView } from "./transcript.ts";
+
+/** TanStack Query options for every procedure of a connection's client. */
+export const orpcOf = (connection: Connection) =>
+  createTanstackQueryUtils(connection.client);
+
+export type Orpc = ReturnType<typeof orpcOf>;
 
 /** The query client for live data, the same in both apps. */
 export const createQueryClient = (): QueryClient =>
@@ -106,4 +126,76 @@ export const useMarkViewed = (client: BalconyClient, id: string) => {
 
     return mark;
   }, [client, id]);
+};
+
+export interface TranscriptState {
+  /** Undefined until the newest page arrives. */
+  readonly transcript: TranscriptView | undefined;
+  /** The server has no Transcript for the session (it keeps retrying). */
+  readonly notFound: boolean;
+  readonly error: Error | null;
+  /** Loads the page before the oldest entry shown. */
+  readonly loadEarlier: () => void;
+  readonly loadingEarlier: boolean;
+}
+
+/**
+ * A session's Transcript: the newest page, followed live, and the pages
+ * loaded with "Load earlier" before it.
+ */
+export const useTranscript = (
+  orpc: Orpc,
+  sessionId: string
+): TranscriptState => {
+  const watch = useQuery(
+    orpc.transcript.watch.streamedOptions({
+      input: { sessionId },
+      // A resubscribe (after a reconnect) starts again from the newest page.
+      queryFnOptions: { refetchMode: "reset" },
+    })
+  );
+
+  const live = liveTranscript(watch.data ?? []);
+
+  // Unset until "Load earlier" is first pressed: the oldest live entry then.
+  const [pressedAt, setPressedAt] = useState<string>();
+  // Unset again when a new live tail no longer reaches it.
+  const anchor = live === undefined ? undefined : pagingAnchor(live, pressedAt);
+
+  const earlier = useInfiniteQuery(
+    orpc.transcript.read.infiniteOptions({
+      enabled: anchor !== undefined,
+      getNextPageParam: (page) =>
+        page.hasEarlier ? page.entries[0]?.id : undefined,
+      initialPageParam: anchor ?? "",
+      input: (before: string) => ({ before, sessionId }),
+      staleTime: Number.POSITIVE_INFINITY,
+    })
+  );
+
+  const transcript =
+    live === undefined
+      ? undefined
+      : joinTranscript(live, earlier.data?.pages ?? [], anchor);
+
+  // Kept retrying (the session may yet appear), so its reason, not error.
+  const reason = watch.failureReason;
+
+  return {
+    error: watch.error ?? earlier.error,
+    loadEarlier: () => {
+      if (live === undefined) {
+        return;
+      }
+
+      if (anchor === undefined) {
+        setPressedAt(earliestId(live));
+      } else {
+        void earlier.fetchNextPage();
+      }
+    },
+    loadingEarlier: earlier.isFetching,
+    notFound: reason instanceof ORPCError && reason.code === "NOT_FOUND",
+    transcript,
+  };
 };

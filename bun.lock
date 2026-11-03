@@ -111,6 +111,7 @@
       "dependencies": {
         "@balcony/contracts": "workspace:*",
         "@orpc/client": "2.0.0-beta.48",
+        "@orpc/tanstack-query": "2.0.0-beta.48",
       },
       "devDependencies": {
         "@effect/vitest": "4.1.2",
