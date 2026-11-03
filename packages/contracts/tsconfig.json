@@ -1,7 +1,4 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["**/*"],
-  // tsc doesn't report "no inputs" (TS18003) for a config with references,
-  // so the package passes while it has no source files.
-  "references": []
+  "include": ["**/*"]
 }

@@ -2,5 +2,12 @@
   "name": "@balcony/client",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@balcony/contracts": "workspace:*",
+    "@orpc/client": "2.0.0-beta.48"
+  }
 }

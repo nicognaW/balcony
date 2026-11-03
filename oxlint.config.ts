@@ -5,10 +5,25 @@ import core from "ultracite/oxlint/core";
 import { jsPluginSettings, selectJsPlugins } from "ultracite/oxlint/js-plugins";
 import shadcn from "ultracite/oxlint/shadcn";
 
+/**
+ * Files no one edits: generated code and fixtures copied from real agent
+ * files (some deliberately malformed). Formatting is skipped for them too.
+ */
+export const generatedFiles = [
+  "**/routeTree.gen.ts",
+  "apps/server/test/fixtures/**",
+];
+
 const root = defineConfig({
   env: core.env,
   extends: [core, antiSlop],
-  ignorePatterns: core.ignorePatterns,
+  ignorePatterns: [...(core.ignorePatterns ?? []), ...generatedFiles],
+  rules: {
+    // Effect Schema's idiom declares a schema and its type under one name
+    // (`const Session = Schema.Struct(…)` + `type Session = …`). TypeScript
+    // already rejects real redeclarations.
+    "no-redeclare": "off",
+  },
 });
 
 export default root;

@@ -1,0 +1,126 @@
+{
+  "fixtureNow": "2026-01-15T12:00:00.000Z",
+  "home": "home",
+  "sessions": {
+    "working": {
+      "sessionId": "0b6f6a3e-1c55-4d0e-9a51-2f3c1d7e9a01",
+      "path": "home/.claude/projects/-Users-nico-code-balcony/0b6f6a3e-1c55-4d0e-9a51-2f3c1d7e9a01.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Working",
+        "statusSource": "statusFile",
+        "project": "balcony",
+        "title": "Run the test suite and fix whatever fails.",
+        "branch": "main",
+        "lastMessageAt": "2026-01-15T11:59:23.003Z"
+      }
+    },
+    "waiting": {
+      "sessionId": "1c7e8b4f-2d66-4e1f-8b62-3a4d2e8f0b02",
+      "path": "home/.claude/projects/-Users-nico-code-shop-api/1c7e8b4f-2d66-4e1f-8b62-3a4d2e8f0b02.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Waiting",
+        "statusSource": "statusFile",
+        "project": "shop-api",
+        "title": "What does the rate limiter do when Redis is down?",
+        "branch": "feature/rate-limit"
+      }
+    },
+    "tools": {
+      "sessionId": "2d8f9c50-3e77-4f20-9c73-4b5e3f901c03",
+      "path": "home/.claude/projects/-Users-nico-code-balcony/2d8f9c50-3e77-4f20-9c73-4b5e3f901c03.jsonl",
+      "subagentTranscript": "home/.claude/projects/-Users-nico-code-balcony/2d8f9c50-3e77-4f20-9c73-4b5e3f901c03/subagents/agent-a02c4f1c1717f53b9.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Waiting",
+        "statusSource": "transcript (status file pid is dead)",
+        "project": "balcony",
+        "branch": "ticket-4",
+        "fileChanges": [
+          "/Users/nico/code/balcony/apps/server/test/fixtures.ts",
+          "/Users/nico/code/balcony/apps/server/test/setup.ts",
+          "/Users/nico/code/balcony/apps/server/package.json",
+          "/Users/nico/code/balcony/docs/explore.ipynb"
+        ],
+        "subagents": [
+          "Review fixture loader"
+        ],
+        "commands": [
+          "bunx vitest run apps/server",
+          "git push origin ticket-4"
+        ]
+      }
+    },
+    "long": {
+      "sessionId": "3e90ad61-4f88-4031-8d84-5c6f40a12d04",
+      "path": "home/.claude/projects/-Users-nico-code-notes-site/3e90ad61-4f88-4031-8d84-5c6f40a12d04.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Waiting",
+        "statusSource": "transcript",
+        "project": "notes.site",
+        "title": "Step 1: tidy up post 01 front matter.",
+        "minNormalisedEntries": 41
+      }
+    },
+    "old": {
+      "sessionId": "4fa1be72-5099-4142-9e95-6d7051b23e05",
+      "path": "home/.claude/projects/-Users-nico-code-shop-api/4fa1be72-5099-4142-9e95-6d7051b23e05.jsonl",
+      "expect": {
+        "listed": false,
+        "reason": "last message 26h before fixtureNow"
+      }
+    },
+    "longRunning": {
+      "sessionId": "5ab2cf83-61aa-4253-8fa6-7e8162c34f06",
+      "path": "home/.claude/projects/-Users-nico-code-balcony/5ab2cf83-61aa-4253-8fa6-7e8162c34f06.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Waiting",
+        "statusSource": "transcript",
+        "title": "Design the pairing flow",
+        "titleSource": "ai-title (synthetic: entry type exists in the 2.1.317 binary, not seen on disk here)",
+        "firstEntryAt": "2026-01-12T12:00:00.010Z"
+      }
+    },
+    "malformedStatus": {
+      "sessionId": "6bc3d094-72bb-4364-9fb7-8f9273d45f07",
+      "path": "home/.claude/projects/-Users-nico-code-shop-api/6bc3d094-72bb-4364-9fb7-8f9273d45f07.jsonl",
+      "expect": {
+        "listed": true,
+        "status": "Working",
+        "statusSource": "transcript (status files unusable)",
+        "project": "shop-api"
+      }
+    }
+  },
+  "statusFiles": {
+    "41001.json": {
+      "pid": "live",
+      "sessionId": "0b6f6a3e-1c55-4d0e-9a51-2f3c1d7e9a01"
+    },
+    "41002.json": {
+      "pid": "live",
+      "sessionId": "1c7e8b4f-2d66-4e1f-8b62-3a4d2e8f0b02"
+    },
+    "41003.json": {
+      "pid": "dead",
+      "sessionId": "2d8f9c50-3e77-4f20-9c73-4b5e3f901c03",
+      "note": "stale record left by a crashed process; claims busy"
+    },
+    "41007.json": {
+      "pid": "live",
+      "sessionId": "6bc3d094-72bb-4364-9fb7-8f9273d45f07",
+      "note": "valid JSON, unknown status value 'thinking-hard'"
+    },
+    "41008.json": {
+      "pid": "live",
+      "note": "truncated JSON"
+    }
+  },
+  "ignoredFiles": [
+    "home/.claude/sessions/41007.c0ffee.key",
+    "home/.claude/sessions/.fleetview-heartbeat"
+  ]
+}
