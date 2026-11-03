@@ -25,11 +25,13 @@ import { withUniwind } from "uniwind";
 
 import { pairByCode, pairWith } from "../lib/connection.ts";
 
-const CODE_MESSAGES: Record<PairingRefusal, string> = {
+const CODE_MESSAGES: Record<PairingRefusal | "not-saved", string> = {
   expired:
     "That code has expired. Press Enter in the terminal running balcony for a new one.",
   locked:
     "Too many wrong tries. Press Enter in the terminal running balcony for a new one.",
+  // The phone's keystore refused to keep the pairing.
+  "not-saved": "This phone couldn't keep the pairing. Try again.",
   other: "Pairing failed. Try again.",
   unreachable:
     "Couldn't reach Balcony. Is this phone on the same Wi-Fi as your Mac?",
@@ -152,7 +154,7 @@ export const PairScreen = ({
   // The scanner reports the same code many times a second.
   const lastScan = useRef<string>(null);
 
-  const onScanned = (payload: string) => {
+  const onScanned = async (payload: string) => {
     if (busy || payload === lastScan.current) {
       return;
     }
@@ -167,7 +169,19 @@ export const PairScreen = ({
     }
 
     setBusy(true);
-    void pairWith(scanned).then(onPaired);
+    setMessage(null);
+    const paired = await pairWith(scanned).catch(() => null);
+
+    if (paired === null) {
+      setBusy(false);
+      // Scanning the same code again tries again.
+      lastScan.current = null;
+      setMessage(CODE_MESSAGES["not-saved"]);
+
+      return;
+    }
+
+    onPaired(paired);
   };
 
   const onSubmit = async () => {
@@ -181,7 +195,10 @@ export const PairScreen = ({
 
     setBusy(true);
     setMessage(null);
-    const result = await pairByCode(parsed.server, code);
+
+    const result = await pairByCode(parsed.server, code).catch(() => ({
+      refusal: "not-saved" as const,
+    }));
 
     if ("paired" in result) {
       onPaired(result.paired);
