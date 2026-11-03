@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./transcript": "./src/transcript.ts"
   },
   "scripts": {
     "test": "bun --bun vitest run"

@@ -3,6 +3,7 @@
 // (c) 2026 T3 Tools Inc., apps/web/src/components/sidebar/SidebarThreadRow.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
+import { Link } from "@tanstack/react-router";
 import { CircleDashedIcon, GitBranchIcon } from "lucide-react";
 
 import { useNow } from "@/hooks/use-now.ts";
@@ -42,21 +43,27 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
 };
 
 export const SessionRow = ({ row }: { readonly row: Row }) => (
-  <li className="bg-card h-[4.875rem] rounded-xl border px-3 py-2">
-    <div className="flex min-w-0 items-center gap-1.5">
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {row.project}
-      </span>
-      <span className="text-muted-foreground ml-auto flex h-5 shrink-0 items-center text-xs tabular-nums">
-        <Mark mark={row.mark} />
-      </span>
-    </div>
-    <p className="mt-1 truncate text-sm">{row.title}</p>
-    {row.branch === null ? null : (
-      <p className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 text-xs">
-        <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-        <span className="truncate">{row.branch}</span>
-      </p>
-    )}
+  <li>
+    <Link
+      className="bg-card hover:bg-accent block h-[4.875rem] rounded-xl border px-3 py-2"
+      params={{ sessionId: row.id }}
+      to="/s/$sessionId"
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+          {row.project}
+        </span>
+        <span className="text-muted-foreground ml-auto flex h-5 shrink-0 items-center text-xs tabular-nums">
+          <Mark mark={row.mark} />
+        </span>
+      </div>
+      <p className="mt-1 truncate text-sm">{row.title}</p>
+      {row.branch === null ? null : (
+        <p className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 text-xs">
+          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          <span className="truncate">{row.branch}</span>
+        </p>
+      )}
+    </Link>
   </li>
 );

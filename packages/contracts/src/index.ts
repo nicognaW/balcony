@@ -4,6 +4,23 @@ import { asyncIteratorObject, oc } from "@orpc/contract";
 import type { RouterContractClient } from "@orpc/contract";
 import { Schema } from "effect";
 
+import { transcriptContract } from "./transcript.ts";
+
+export {
+  AgentTextEntry,
+  CommandRunEntry,
+  FileChangeEntry,
+  OtherStepEntry,
+  SubagentStartedEntry,
+  TRANSCRIPT_PAGE_SIZE,
+  TranscriptEntry,
+  TranscriptPage,
+  TranscriptPageInput,
+  TranscriptUpdate,
+  TranscriptWatchInput,
+  UserMessageEntry,
+} from "./transcript.ts";
+
 // Wire schemas stay JSON-shaped (no decoding transforms): oRPC validates the
 // server's outputs too, so a transform would run against handler results.
 const std = Schema.toStandardSchemaV1;
@@ -90,6 +107,7 @@ export const contract = {
     /** The current session list, then a new list on every change. */
     watch: oc.output(asyncIteratorObject(std(SessionList))),
   },
+  transcript: transcriptContract,
 };
 
 export type Contract = typeof contract;
