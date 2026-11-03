@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { TranscriptEntryRow } from "@/components/transcript/transcript-entry.tsx";
 import { usePaired } from "@/hooks/use-paired.ts";
+import { useMarkViewed } from "@/hooks/use-session-marks.ts";
 import { isUnauthorized } from "@/lib/connection.ts";
 
 /** How close to the bottom (px) still counts as following the Transcript. */
@@ -68,6 +69,8 @@ const Message = ({ children }: { readonly children: string }) => (
 const TranscriptScreen = () => {
   const { sessionId } = useParams({ from: "/s/$sessionId" });
   const { orpc, unpair } = usePaired();
+  // Opening the session clears Done on every client.
+  useMarkViewed(sessionId);
 
   const watch = useQuery(
     orpc.transcript.watch.streamedOptions({

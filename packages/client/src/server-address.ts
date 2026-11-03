@@ -1,7 +1,7 @@
 // The Balcony server the mobile app pairs with: typed as an address next to
 // the short code, or scanned from the QR code `balcony` prints. The app
 // speaks plain HTTP, so only local network addresses are accepted (see
-// docs/adr/0003-cleartext-only-to-local-addresses.md).
+// docs/adr/0004-cleartext-only-to-local-addresses.md).
 
 /** The port `balcony` listens on unless `BALCONY_PORT` says otherwise. */
 export const DEFAULT_PORT = 7766;

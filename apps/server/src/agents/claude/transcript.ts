@@ -1,5 +1,6 @@
 // What the session list needs from a Claude transcript (one JSONL file per
 // session), folded line by line so a growing file is read only once.
+import type { SessionStatus } from "@balcony/contracts";
 import { Option, Predicate, Schema } from "effect";
 
 /** A tool's input: an object whose fields depend on the tool. */
@@ -345,6 +346,13 @@ export const titleOf = (summary: TranscriptSummary): string =>
   summary.summary ??
   summary.firstPrompt ??
   "Untitled session";
+
+/**
+ * Working or Waiting as the transcript tells it: Working while the latest
+ * turn hasn't ended. Used when Claude's status file can't be trusted.
+ */
+export const statusOf = (summary: TranscriptSummary): SessionStatus =>
+  summary.inTurn ? "working" : "waiting";
 
 /** Claude records a detached checkout, or no repository, as `HEAD`. */
 const NO_BRANCH = new Set(["", "HEAD"]);

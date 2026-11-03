@@ -9,10 +9,12 @@ import type { Duration } from "effect";
 
 import { AgentSources } from "./agents/agent-source.ts";
 import { makeClaudeSource } from "./agents/claude/claude-source.ts";
+import { Database } from "./db/database.ts";
 import { makePairingCodes, PairingCodes } from "./pairing-code.ts";
 import type { PairingCode } from "./pairing-code.ts";
 import { router } from "./rpc.ts";
 import type { RpcContext } from "./rpc.ts";
+import { SessionMarks } from "./session-marks.ts";
 import { Sessions } from "./sessions.ts";
 import { loadOrCreateToken } from "./token.ts";
 import { Transcripts } from "./transcripts.ts";
@@ -88,7 +90,8 @@ interface SocketData {
 export const startServer = Effect.fn("startServer")(function* startServer(
   options: ServerOptions
 ) {
-  const token = yield* loadOrCreateToken(path.join(options.home, ".balcony"));
+  const stateDir = path.join(options.home, ".balcony");
+  const token = yield* loadOrCreateToken(stateDir);
   const now = options.now ?? Date.now;
 
   const claude = yield* makeClaudeSource({
@@ -102,11 +105,17 @@ export const startServer = Effect.fn("startServer")(function* startServer(
     token,
   });
 
+  const marks = SessionMarks.layer(now).pipe(
+    Layer.provide(Database.layer(stateDir))
+  );
+
   const context = yield* Layer.build(
-    Layer.merge(
+    Layer.mergeAll(
       Layer.mergeAll(Sessions.layer, Transcripts.layer).pipe(
-        Layer.provide(Layer.succeed(AgentSources, [claude]))
+        Layer.provide(Layer.succeed(AgentSources, [claude])),
+        Layer.provide(marks)
       ),
+      marks,
       Layer.succeed(PairingCodes, pairingCodes)
     )
   );

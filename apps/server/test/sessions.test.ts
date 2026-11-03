@@ -1,119 +1,19 @@
 // Seam A: the real server against a fixture home, through the generated client.
-import {
-  appendFile,
-  mkdir,
-  readdir,
-  readFile,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { connect } from "@balcony/client";
-import type { Session, SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
 import { describe, expect, it } from "@effect/vitest";
-import { Context, Effect, Layer } from "effect";
+import { Effect } from "effect";
 
 import { startServer } from "../src/server.ts";
-import type { RunningServer } from "../src/server.ts";
-import { fixtureHome, fixtureNow, fixtureSessions } from "./fixture-home.ts";
-import type { FixtureHome } from "./fixture-home.ts";
-
-/** The server's clock: fixture time unless a test moves it. */
-interface TestClock {
-  now: number;
-}
-
-class Fixture extends Context.Service<
+import { fixtureNow, fixtureSessions } from "./fixture-home.ts";
+import {
+  find,
   Fixture,
-  FixtureHome & { readonly server: RunningServer; readonly clock: TestClock }
->()("test/Fixture") {
-  /** A fresh fixture home and server, separate for each layer built. */
-  static readonly make = () =>
-    Layer.effect(
-      Fixture,
-      Effect.gen(function* makeFixture() {
-        const home = yield* fixtureHome;
-        const clock: TestClock = { now: fixtureNow };
-
-        const server = yield* startServer({
-          home: home.home,
-          hostname: "127.0.0.1",
-          now: () => clock.now,
-          pollInterval: "50 millis",
-          port: 0,
-        });
-
-        return { ...home, clock, server };
-      })
-    ).pipe(Layer.provide(BunServices.layer));
-}
-
-/**
- * Opens `sessions.watch` with a token. `next(until)` waits for the next list
- * that passes `until`; the watch closes with the test's scope.
- */
-const watchSessions = Effect.fn("watchSessions")(function* watchSessions(
-  token: string | null,
-  origin?: string
-) {
-  const { server } = yield* Fixture;
-  const { client } = connect({ server: origin ?? server.origin, token });
-
-  const lists = yield* Effect.acquireRelease(
-    Effect.tryPromise({
-      catch: (error) => error,
-      try: () => client.sessions.watch(),
-    }),
-    (iterator) => Effect.promise(async () => await iterator.return?.())
-  );
-
-  const nextMatching = async (
-    until: (list: SessionList) => boolean
-  ): Promise<SessionList> => {
-    const result = await lists.next();
-
-    if (result.done === true) {
-      throw new Error("The session list ended");
-    }
-
-    return until(result.value) ? result.value : nextMatching(until);
-  };
-
-  const next = (until: (list: SessionList) => boolean = () => true) =>
-    Effect.tryPromise({
-      catch: (error) => error,
-      try: () => nextMatching(until),
-    }).pipe(Effect.timeout("5 seconds"));
-
-  return { next };
-});
-
-/** Every file under a folder, with its bytes and modification time. */
-const snapshotFiles = (dir: string) =>
-  Effect.promise(async () => {
-    const entries = await readdir(dir, {
-      recursive: true,
-      withFileTypes: true,
-    });
-
-    const files = entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => path.join(entry.parentPath, entry.name))
-      .toSorted();
-
-    return Promise.all(
-      files.map(async (file) => {
-        const [bytes, info] = await Promise.all([readFile(file), stat(file)]);
-
-        return { bytes: bytes.toString("base64"), file, mtime: info.mtimeMs };
-      })
-    );
-  });
-
-const find = (list: SessionList, id: string | undefined): Session | undefined =>
-  list.sessions.find((session) => session.id === id);
+  snapshotFiles,
+  watchSessions,
+} from "./fixture-server.ts";
 
 describe("sessions over the oRPC WebSocket", () => {
   it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
@@ -343,6 +243,102 @@ describe("the 24-hour window", () => {
             lastUserMessageAt: "2026-01-16T11:49:00.000Z",
             title: "Bump the Node version in CI to 24.",
           });
+        })
+    );
+  });
+});
+
+describe("status from the Transcript when Claude's status file can't be used", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "works out Working from the Transcript when the status files are malformed",
+      () =>
+        Effect.gen(function* malformedStatus() {
+          const { server } = yield* Fixture;
+          const list = yield* (yield* watchSessions(server.token)).next();
+
+          // One record has an unknown status, the other is torn JSON; the
+          // Transcript ends on a subagent the agent started.
+          expect(find(list, fixtureSessions.malformedStatus)).toMatchObject({
+            project: "shop-api",
+            status: "working",
+          });
+        })
+    );
+
+    test.effect(
+      "works out Waiting from the Transcript when the status file is left by a process that died",
+      () =>
+        Effect.gen(function* staleStatus() {
+          const { server } = yield* Fixture;
+          const list = yield* (yield* watchSessions(server.token)).next();
+
+          // The record still says busy, but its turn ended before the crash.
+          expect(find(list, fixtureSessions.tools)?.status).toBe("waiting");
+        })
+    );
+
+    test.effect(
+      "follows the Transcript's turns when a session has no status file",
+      () =>
+        Effect.gen(function* missingStatus() {
+          const { claude, server, statusFile } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+
+          // The working session's agent is running a command.
+          yield* Effect.promise(() => rm(statusFile("41001.json")));
+          expect(
+            find(yield* watch.next(), fixtureSessions.working)?.status
+          ).toBe("working");
+
+          const transcript = path.join(
+            claude,
+            "projects",
+            "-Users-nico-code-notes-site",
+            `${fixtureSessions.long}.jsonl`
+          );
+
+          const append = (line: string) =>
+            Effect.promise(() => appendFile(transcript, `${line}\n`));
+
+          const envelope = {
+            cwd: "/Users/nico/code/notes.site",
+            sessionId: fixtureSessions.long,
+          };
+
+          yield* append(
+            JSON.stringify({
+              ...envelope,
+              message: { content: "Now tidy post 20.", role: "user" },
+              origin: { kind: "human" },
+              timestamp: "2026-01-15T12:00:01.000Z",
+              type: "user",
+              uuid: "0d8a7a52-0000-4000-8000-000000000003",
+            })
+          );
+
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.long)?.status === "working"
+          );
+
+          yield* append(
+            JSON.stringify({
+              ...envelope,
+              message: {
+                content: [{ text: "Post 20 is tidy.", type: "text" }],
+                id: "msg_0000000000000000000000f6",
+                role: "assistant",
+                stop_reason: "end_turn",
+              },
+              timestamp: "2026-01-15T12:00:09.000Z",
+              type: "assistant",
+              uuid: "0d8a7a52-0000-4000-8000-000000000004",
+            })
+          );
+
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.long)?.status === "waiting"
+          );
         })
     );
   });

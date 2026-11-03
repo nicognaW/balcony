@@ -3,7 +3,11 @@
 // T3 Tools Inc., apps/mobile/src/features/threads/thread-list-v2-items.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
-import { CircleDashedIcon, GitBranchIcon } from "lucide-react-native";
+import {
+  CircleCheckIcon,
+  CircleDashedIcon,
+  GitBranchIcon,
+} from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 
 import { useNow } from "../hooks/use-now.ts";
@@ -25,21 +29,38 @@ const RelativeTime = ({ at }: { readonly at: number }) => {
   );
 };
 
-/** Working with its elapsed time, or how long ago the session was active. */
+/** Working with its elapsed time, Done, or how long ago the session was active. */
 const Mark = ({ mark }: { readonly mark: RowMark }) => {
-  if (mark.kind === "time") {
-    return <RelativeTime at={mark.at} />;
-  }
+  switch (mark.kind) {
+    case "time": {
+      return <RelativeTime at={mark.at} />;
+    }
 
-  return (
-    <View className="flex-row items-center gap-1">
-      <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
-      <Text className="text-info-foreground text-xs font-medium tabular-nums">
-        Working
-        {mark.since === null ? null : <WorkingDuration since={mark.since} />}
-      </Text>
-    </View>
-  );
+    case "done": {
+      return (
+        <View className="flex-row items-center gap-1">
+          <Icon icon={CircleCheckIcon} size={14} tone="success-foreground" />
+          <Text className="text-success-foreground text-xs font-medium">
+            Done
+          </Text>
+        </View>
+      );
+    }
+
+    default: {
+      return (
+        <View className="flex-row items-center gap-1">
+          <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
+          <Text className="text-info-foreground text-xs font-medium tabular-nums">
+            Working
+            {mark.since === null ? null : (
+              <WorkingDuration since={mark.since} />
+            )}
+          </Text>
+        </View>
+      );
+    }
+  }
 };
 
 export const SessionRow = ({
