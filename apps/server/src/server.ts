@@ -22,6 +22,8 @@ export interface ServerOptions {
   readonly hostname: string;
   /** How often agent files are checked for changes. */
   readonly pollInterval?: Duration.Input;
+  /** The current time in epoch ms. Defaults to the system clock. */
+  readonly now?: () => number;
   /** The built web app. Defaults to `apps/web/dist`. */
   readonly webRoot?: string;
 }
@@ -85,6 +87,7 @@ export const startServer = Effect.fn("startServer")(function* startServer(
 
   const claude = yield* makeClaudeSource({
     claudeDir: path.join(options.home, ".claude"),
+    now: options.now ?? Date.now,
     pollInterval: options.pollInterval ?? "1 second",
   });
 

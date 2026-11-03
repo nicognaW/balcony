@@ -1,5 +1,12 @@
 // Seam A: the real server against a fixture home, through the generated client.
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { connect } from "@balcony/client";
@@ -10,28 +17,37 @@ import { Context, Effect, Layer } from "effect";
 
 import { startServer } from "../src/server.ts";
 import type { RunningServer } from "../src/server.ts";
-import { fixtureHome, fixtureSessions } from "./fixture-home.ts";
+import { fixtureHome, fixtureNow, fixtureSessions } from "./fixture-home.ts";
 import type { FixtureHome } from "./fixture-home.ts";
+
+/** The server's clock: fixture time unless a test moves it. */
+interface TestClock {
+  now: number;
+}
 
 class Fixture extends Context.Service<
   Fixture,
-  FixtureHome & { readonly server: RunningServer }
+  FixtureHome & { readonly server: RunningServer; readonly clock: TestClock }
 >()("test/Fixture") {
-  static readonly layer = Layer.effect(
-    Fixture,
-    Effect.gen(function* makeFixture() {
-      const home = yield* fixtureHome;
+  /** A fresh fixture home and server, separate for each layer built. */
+  static readonly make = () =>
+    Layer.effect(
+      Fixture,
+      Effect.gen(function* makeFixture() {
+        const home = yield* fixtureHome;
+        const clock: TestClock = { now: fixtureNow };
 
-      const server = yield* startServer({
-        home: home.home,
-        hostname: "127.0.0.1",
-        pollInterval: "50 millis",
-        port: 0,
-      });
+        const server = yield* startServer({
+          home: home.home,
+          hostname: "127.0.0.1",
+          now: () => clock.now,
+          pollInterval: "50 millis",
+          port: 0,
+        });
 
-      return { ...home, server };
-    })
-  ).pipe(Layer.provide(BunServices.layer));
+        return { ...home, clock, server };
+      })
+    ).pipe(Layer.provide(BunServices.layer));
 }
 
 /**
@@ -100,7 +116,7 @@ const find = (list: SessionList, id: string | undefined): Session | undefined =>
   list.sessions.find((session) => session.id === id);
 
 describe("sessions over the oRPC WebSocket", () => {
-  it.layer(Fixture.layer, { excludeTestServices: true })((test) => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
     test.effect("rejects calls without the token", () =>
       Effect.gen(function* rejectsWithoutToken() {
         const missing = yield* Effect.flip(
@@ -123,15 +139,30 @@ describe("sessions over the oRPC WebSocket", () => {
         const list = yield* (yield* watchSessions(server.token)).next();
         expect(find(list, fixtureSessions.working)).toMatchObject({
           agent: "claude",
+          branch: "main",
           lastMessageAt: "2026-01-15T11:59:23.003Z",
+          lastUserMessageAt: "2026-01-15T11:54:00.031Z",
           project: "balcony",
           status: "working",
           title: "Run the test suite and fix whatever fails.",
+          turnEndedAt: null,
+          turnStartedAt: "2026-01-15T11:54:00.031Z",
         });
         expect(find(list, fixtureSessions.waiting)).toMatchObject({
+          branch: "feature/rate-limit",
+          lastUserMessageAt: "2026-01-15T11:10:00.031Z",
           project: "shop-api",
           status: "waiting",
           title: "What does the rate limiter do when Redis is down?",
+          turnEndedAt: "2026-01-15T11:48:03.003Z",
+          turnStartedAt: "2026-01-15T11:10:00.031Z",
+        });
+        // A finished background task woke the agent for a second turn.
+        expect(find(list, fixtureSessions.tools)).toMatchObject({
+          branch: "ticket-4",
+          lastUserMessageAt: "2026-01-15T10:00:00.031Z",
+          turnEndedAt: "2026-01-15T10:25:03.000Z",
+          turnStartedAt: "2026-01-15T10:01:59.917Z",
         });
         expect(find(list, fixtureSessions.longRunning)).toMatchObject({
           title: "Design the pairing flow",
@@ -216,6 +247,7 @@ describe("sessions over the oRPC WebSocket", () => {
         const restarted = yield* startServer({
           home,
           hostname: "127.0.0.1",
+          now: () => fixtureNow,
           port: 0,
         }).pipe(Effect.provide(BunServices.layer));
 
@@ -228,6 +260,22 @@ describe("sessions over the oRPC WebSocket", () => {
       })
     );
 
+    test.effect(
+      "lists sessions whose last message is within 24 hours, however old the session is",
+      () =>
+        Effect.gen(function* window() {
+          const { server } = yield* Fixture;
+          const list = yield* (yield* watchSessions(server.token)).next();
+
+          // Started three days ago, messaged half an hour ago.
+          expect(find(list, fixtureSessions.longRunning)).toMatchObject({
+            lastMessageAt: "2026-01-15T11:30:03.000Z",
+          });
+          // Last messaged 26 hours ago.
+          expect(find(list, fixtureSessions.old)).toBeUndefined();
+        })
+    );
+
     test.effect("reads Claude's files without changing them", () =>
       Effect.gen(function* readOnly() {
         const { claude, server } = yield* Fixture;
@@ -237,6 +285,65 @@ describe("sessions over the oRPC WebSocket", () => {
         yield* Effect.sleep("200 millis");
         expect(yield* snapshotFiles(claude)).toEqual(before);
       })
+    );
+  });
+});
+
+describe("the 24-hour window", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "drops a session once its last message is 24 hours old, and lists it again when it gets a new one",
+      () =>
+        Effect.gen(function* windowMoves() {
+          const { claude, clock, server } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+          expect(
+            find(yield* watch.next(), fixtureSessions.waiting)
+          ).toBeDefined();
+
+          // A day after the waiting session's last message (11:48:03), but not
+          // yet a day after the working one's (11:59:23).
+          clock.now = Date.parse("2026-01-16T11:50:00.000Z");
+
+          const later = yield* watch.next(
+            (list) => find(list, fixtureSessions.waiting) === undefined
+          );
+
+          expect(find(later, fixtureSessions.working)).toBeDefined();
+          expect(find(later, fixtureSessions.old)).toBeUndefined();
+
+          const line = {
+            cwd: "/Users/nico/code/shop-api",
+            message: { content: "Is CI green on Node 24 now?", role: "user" },
+            origin: { kind: "human" },
+            sessionId: fixtureSessions.old,
+            timestamp: "2026-01-16T11:49:00.000Z",
+            type: "user",
+            uuid: "0d8a7a52-0000-4000-8000-000000000002",
+          };
+
+          yield* Effect.promise(() =>
+            appendFile(
+              path.join(
+                claude,
+                "projects",
+                "-Users-nico-code-shop-api",
+                `${fixtureSessions.old}.jsonl`
+              ),
+              `${JSON.stringify(line)}\n`
+            )
+          );
+
+          const messaged = yield* watch.next(
+            (list) => find(list, fixtureSessions.old) !== undefined
+          );
+
+          expect(find(messaged, fixtureSessions.old)).toMatchObject({
+            lastMessageAt: "2026-01-16T11:49:00.000Z",
+            lastUserMessageAt: "2026-01-16T11:49:00.000Z",
+            title: "Bump the Node version in CI to 24.",
+          });
+        })
     );
   });
 });

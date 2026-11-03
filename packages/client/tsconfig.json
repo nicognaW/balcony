@@ -1,9 +1,10 @@
 {
   // The client runs in browsers, React Native and Bun; all of them have a
-  // global WebSocket, typed here by DOM.
+  // global WebSocket, typed here by DOM, and ES2023 (toSorted, findLast, …;
+  // Hermes since React Native 0.74).
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["**/*"]
 }

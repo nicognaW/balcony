@@ -6,6 +6,18 @@ import { RPCLink } from "@orpc/client/websocket";
 
 export type { BalconyClient } from "@balcony/contracts";
 
+export { createSessionList, WORKING_EXIT_GRACE_MS } from "./session-list.ts";
+
+export type {
+  RowMark,
+  SessionListModel,
+  SessionListUpdate,
+  SessionListView,
+  SessionRow,
+} from "./session-list.ts";
+
+export { formatRelativeTime, formatWorkingDuration } from "./time.ts";
+
 /**
  * connecting: no socket has opened yet. connected: a socket is open.
  * reconnecting: the socket closed and the link is trying again.
