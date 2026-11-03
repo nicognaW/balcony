@@ -1,5 +1,5 @@
-// A session in the list, laid out like T3 Code's row: project and status or
-// time, then the title, then the branch. Adapted from T3 Code (MIT, (c) 2026
+// A session in the list, laid out like T3 Code's row: project and status,
+// Done or time, then the title, then the branch, with Settle at the corner. Adapted from T3 Code (MIT, (c) 2026
 // T3 Tools Inc., apps/mobile/src/features/threads/thread-list-v2-items.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
@@ -11,6 +11,7 @@ import {
 import { Pressable, Text, View } from "react-native";
 
 import { useNow } from "../hooks/use-now.ts";
+import { useSettle } from "../hooks/use-session-marks.ts";
 import { Icon } from "./icon.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
@@ -63,6 +64,29 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
   }
 };
 
+/** Settles the session, or un-settles it when it is Settled. */
+const SettleButton = ({ row }: { readonly row: Row }) => {
+  const settle = useSettle();
+  const settled = row.session.settledAt !== null;
+
+  return (
+    <Pressable
+      accessibilityLabel={`${settled ? "Un-settle" : "Settle"} ${row.title}`}
+      accessibilityRole="button"
+      className="absolute right-1.5 bottom-1 rounded px-1.5 py-1 active:opacity-60 disabled:opacity-60"
+      disabled={settle.isPending}
+      hitSlop={6}
+      onPress={() => settle.mutate({ id: row.id, settled: !settled })}
+    >
+      <Text className="text-muted-foreground text-xs font-medium">
+        {settled ? "Un-settle" : "Settle"}
+      </Text>
+    </Pressable>
+  );
+};
+
+// The Settle button sits over the card rather than inside it, so the two
+// stay separate controls.
 export const SessionRow = ({
   onPress,
   row,
@@ -70,34 +94,37 @@ export const SessionRow = ({
   readonly onPress: () => void;
   readonly row: Row;
 }) => (
-  <Pressable
-    accessibilityHint="Opens the Transcript"
-    accessibilityRole="button"
-    className="bg-card border-border active:bg-accent h-[78px] rounded-xl border px-3 py-2"
-    onPress={onPress}
-  >
-    <View className="flex-row items-center gap-1.5">
-      <Text
-        className="text-muted-foreground min-w-0 flex-1 text-xs"
-        numberOfLines={1}
-      >
-        {row.project}
-      </Text>
-      <Mark mark={row.mark} />
-    </View>
-    <Text className="text-foreground mt-1 text-sm" numberOfLines={1}>
-      {row.title}
-    </Text>
-    {row.branch === null ? null : (
-      <View className="mt-0.5 flex-row items-center gap-1">
-        <Icon icon={GitBranchIcon} size={12} />
+  <View>
+    <Pressable
+      accessibilityHint="Opens the Transcript"
+      accessibilityRole="button"
+      className="bg-card border-border active:bg-accent h-[78px] rounded-xl border px-3 py-2"
+      onPress={onPress}
+    >
+      <View className="flex-row items-center gap-1.5">
         <Text
           className="text-muted-foreground min-w-0 flex-1 text-xs"
           numberOfLines={1}
         >
-          {row.branch}
+          {row.project}
         </Text>
+        <Mark mark={row.mark} />
       </View>
-    )}
-  </Pressable>
+      <Text className="text-foreground mt-1 text-sm" numberOfLines={1}>
+        {row.title}
+      </Text>
+      {row.branch === null ? null : (
+        <View className="mt-0.5 flex-row items-center gap-1 pr-16">
+          <Icon icon={GitBranchIcon} size={12} />
+          <Text
+            className="text-muted-foreground min-w-0 flex-1 text-xs"
+            numberOfLines={1}
+          >
+            {row.branch}
+          </Text>
+        </View>
+      )}
+    </Pressable>
+    <SettleButton row={row} />
+  </View>
 );

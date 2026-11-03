@@ -15,6 +15,7 @@ import { FlatList, Pressable, Text, View } from "react-native";
 
 import { TranscriptEntryRow } from "../components/transcript-entry.tsx";
 import { usePaired } from "../hooks/use-paired.ts";
+import { useMarkViewed } from "../hooks/use-session-marks.ts";
 import { isUnauthorized } from "../lib/connection.ts";
 import type { ScreenProps } from "../navigation.ts";
 
@@ -64,6 +65,7 @@ const LoadEarlier = ({
 export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
   const { sessionId } = route.params;
   const { orpc, unpair } = usePaired();
+  useMarkViewed(sessionId);
 
   const watch = useQuery(
     orpc.transcript.watch.streamedOptions({
