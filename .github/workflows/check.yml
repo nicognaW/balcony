@@ -21,3 +21,16 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run check
+
+  commit-messages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # No AI attribution in history (see #2).
+      - run: |
+          if git log --format='%H%n%B' HEAD | grep -iE '^(Co-Authored-By: Claude|Claude-Session:)|Generated with \[Claude Code\]|claude\.ai/code/session_'; then
+            echo "Remove the AI attribution lines above from these commits." >&2
+            exit 1
+          fi
