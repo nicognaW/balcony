@@ -2,5 +2,8 @@
   "name": "@balcony/web",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
 }

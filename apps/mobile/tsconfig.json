@@ -1,0 +1,8 @@
+{
+  // No DOM in React Native; its types come with the react-native package.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  },
+  "include": ["**/*"]
+}

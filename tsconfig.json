@@ -1,4 +1,7 @@
 {
+  // The options every workspace shares. Each workspace has a tsconfig.json
+  // that extends this one with its runtime's lib, jsx and types; uncheck
+  // checks each of them. This one checks the config files at the root.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
@@ -11,7 +14,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": []
   },
-  "include": ["*.ts", "apps", "packages"]
+  "include": ["*.ts"]
 }
