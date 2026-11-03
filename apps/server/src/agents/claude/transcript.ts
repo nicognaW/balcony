@@ -2,7 +2,16 @@
 // session), folded line by line so a growing file is read only once.
 import { Option, Predicate, Schema } from "effect";
 
+/** A tool's input: an object whose fields depend on the tool. */
+const ToolInput = Schema.Record(Schema.String, Schema.Unknown);
+
+export type ToolInput = typeof ToolInput.Type;
+
 const ContentBlock = Schema.Struct({
+  /** A tool_use block's input. Its fields are read one by one (entries.ts). */
+  input: Schema.optional(ToolInput),
+  /** A tool_use block's tool name. */
+  name: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String),
   type: Schema.String,
 });
@@ -15,6 +24,7 @@ const TranscriptLine = Schema.Struct({
   aiTitle: Schema.optional(Schema.String),
   customTitle: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
+  isApiErrorMessage: Schema.optional(Schema.Boolean),
   isCompactSummary: Schema.optional(Schema.Boolean),
   isMeta: Schema.optional(Schema.Boolean),
   message: Schema.optional(
@@ -22,6 +32,7 @@ const TranscriptLine = Schema.Struct({
       content: Schema.optional(
         Schema.Union([Schema.String, Schema.Array(ContentBlock)])
       ),
+      model: Schema.optional(Schema.String),
     })
   ),
   origin: Schema.optional(
@@ -30,11 +41,12 @@ const TranscriptLine = Schema.Struct({
   summary: Schema.optional(Schema.String),
   timestamp: Schema.optional(Schema.String),
   type: Schema.String,
+  uuid: Schema.optional(Schema.String),
 });
 
-type TranscriptLine = typeof TranscriptLine.Type;
+export type TranscriptLine = typeof TranscriptLine.Type;
 
-const decodeLine = Schema.decodeUnknownOption(
+export const decodeLine = Schema.decodeUnknownOption(
   Schema.fromJsonString(TranscriptLine)
 );
 
@@ -63,7 +75,7 @@ export const emptySummary: TranscriptSummary = {
 const MAX_TITLE = 200;
 
 /** The text of a user line, or undefined when it holds tool results. */
-const userText = ({ message }: TranscriptLine): string | undefined => {
+export const userText = ({ message }: TranscriptLine): string | undefined => {
   const content = message?.content;
 
   if (content === undefined || Predicate.isString(content)) {
@@ -83,6 +95,18 @@ const userText = ({ message }: TranscriptLine): string | undefined => {
 
 const COMMAND = /<command-name>\s*(?<name>[^<]*?)\s*<\/command-name>/u;
 const COMMAND_ARGS = /<command-args>\s*(?<args>[\s\S]*?)\s*<\/command-args>/u;
+
+/** A slash command echo (`<command-name>…`) as `/name args`. */
+export const slashCommandOf = (text: string): string | undefined => {
+  const command = COMMAND.exec(text)?.groups?.name;
+  const args = COMMAND_ARGS.exec(text)?.groups?.args ?? "";
+
+  if (command === undefined) {
+    return undefined;
+  }
+
+  return args === "" ? command : `${command} ${args}`;
+};
 
 /**
  * The prompt a user line shows as a title, following Claude's own picker:
@@ -109,18 +133,7 @@ const promptOf = (line: TranscriptLine): string | undefined => {
     return undefined;
   }
 
-  if (!text.startsWith("<")) {
-    return text;
-  }
-
-  const command = COMMAND.exec(text)?.groups?.name;
-  const args = COMMAND_ARGS.exec(text)?.groups?.args ?? "";
-
-  if (command === undefined) {
-    return undefined;
-  }
-
-  return args === "" ? command : `${command} ${args}`;
+  return text.startsWith("<") ? slashCommandOf(text) : text;
 };
 
 const oneLine = (text: string): string =>

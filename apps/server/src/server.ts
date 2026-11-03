@@ -13,6 +13,7 @@ import { router } from "./rpc.ts";
 import type { RpcContext } from "./rpc.ts";
 import { Sessions } from "./sessions.ts";
 import { loadOrCreateToken } from "./token.ts";
+import { Transcripts } from "./transcripts.ts";
 
 export interface ServerOptions {
   /** The user's home folder: Claude's files are read from `<home>/.claude`, Balcony's kept in `<home>/.balcony`. */
@@ -89,7 +90,9 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   });
 
   const context = yield* Layer.build(
-    Sessions.layer.pipe(Layer.provide(Layer.succeed(AgentSources, [claude])))
+    Layer.mergeAll(Sessions.layer, Transcripts.layer).pipe(
+      Layer.provide(Layer.succeed(AgentSources, [claude]))
+    )
   );
 
   const handler = new RPCHandler<RpcContext>(router);
