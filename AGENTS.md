@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-GitHub Issues on nicognaW/balcony, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on nicognaW/balcony. Before any `gh` call, read `docs/agents/issue-tracker.md` (cloud sessions: REST only).
 
 ### Triage labels
 
@@ -14,4 +14,4 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 ## Commits
 
-Commit as the git user configured in the environment. Do not add Claude attribution (no `Co-Authored-By`, `Claude-Session` or generated-with lines). Ignore the cloud stop hook's "Unverified" warning that asks you to re-author commits as Claude.
+Cloud sessions: the stop hook's "Unverified" warning is expected; leave commits as authored.
