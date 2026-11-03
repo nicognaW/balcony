@@ -3,6 +3,9 @@
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 
+import { createSessionList } from "@balcony/client";
+import type { SessionListView } from "@balcony/client";
+import type { SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
@@ -88,6 +91,77 @@ describe("Done and Settled over the oRPC WebSocket", () => {
             "2026-01-15T12:05:00.000Z"
           );
         })
+    );
+  });
+});
+
+interface Place {
+  readonly section: "working" | "main" | "settled";
+  readonly mark: "working" | "done" | "time";
+}
+
+/** Where a session shows in a client's list. */
+const placeOf = (view: SessionListView, id: string): Place | undefined => {
+  for (const section of ["working", "main", "settled"] as const) {
+    const row = view[section].find((candidate) => candidate.id === id);
+
+    if (row !== undefined) {
+      return { mark: row.mark.kind, section };
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * A client that watches the list and lays it out with the shared view model,
+ * as the web and Android apps do.
+ */
+const listClient = Effect.fn("listClient")(function* listClient(token: string) {
+  const { clock } = yield* Fixture;
+  const watch = yield* watchSessions(token);
+  const model = createSessionList();
+
+  const viewOf = (list: SessionList) =>
+    model.update(list.sessions, clock.now).view;
+
+  /** Waits for a list in which session `id` shows at `place`. */
+  const sees = (id: string, place: Place) =>
+    watch.next((list) => {
+      const shown = placeOf(viewOf(list), id);
+
+      return shown?.section === place.section && shown.mark === place.mark;
+    });
+
+  return { client: yield* clientOf(token), sees };
+});
+
+describe("the web app and the Android app", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("see each other's Done and Settled changes live", () =>
+      Effect.gen(function* stayInSync() {
+        const { clock, server } = yield* Fixture;
+        const web = yield* listClient(server.token);
+        const phone = yield* listClient(server.token);
+
+        // The phone opened the session before its last turn ended.
+        clock.now = Date.parse("2026-01-15T08:00:00.000Z");
+        yield* call(() => phone.client.sessions.markViewed({ id: waiting }));
+        yield* web.sees(waiting, { mark: "done", section: "main" });
+        yield* phone.sees(waiting, { mark: "done", section: "main" });
+
+        // Opening it in the browser clears Done on the phone.
+        clock.now = fixtureNow;
+        yield* call(() => web.client.sessions.markViewed({ id: waiting }));
+        yield* phone.sees(waiting, { mark: "time", section: "main" });
+
+        // Settled on the phone, un-settled in the browser.
+        yield* call(() => phone.client.sessions.settle({ id: waiting }));
+        yield* web.sees(waiting, { mark: "time", section: "settled" });
+
+        yield* call(() => web.client.sessions.unsettle({ id: waiting }));
+        yield* phone.sees(waiting, { mark: "time", section: "main" });
+      })
     );
   });
 });

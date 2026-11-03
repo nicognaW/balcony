@@ -1,3 +1,4 @@
+import type { PairingRefusal } from "@balcony/client";
 // Pairing: scan the QR code `balcony` prints, or type the Mac's address and
 // the short code shown under the QR. Wording follows the web app's.
 import {
@@ -22,7 +23,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 
 import { pairWith, pairWithCode } from "../lib/connection.ts";
-import type { PairedConnection, PairingRefusal } from "../lib/connection.ts";
+import type { PairedConnection } from "../lib/connection.ts";
 
 const CODE_MESSAGES: Record<PairingRefusal, string> = {
   expired:

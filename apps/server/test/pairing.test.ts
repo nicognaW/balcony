@@ -1,5 +1,5 @@
 // Seam A: pairing by short code, through the generated client over WebSocket.
-import { exchangePairingCode } from "@balcony/client";
+import { exchangePairingCode, redeemPairingCode } from "@balcony/client";
 import { BunServices } from "@effect/platform-bun";
 import { describe, expect, it } from "@effect/vitest";
 import { Context, Effect, Layer } from "effect";
@@ -132,6 +132,38 @@ describe("pairing by short code", () => {
         const reused = yield* Effect.flip(exchange(server, code));
 
         expect(reused).toMatchObject({ code: "PAIRING_CODE_EXPIRED" });
+      })
+    );
+  });
+});
+
+const redeem = (server: string, code: string) =>
+  Effect.promise(() => redeemPairingCode({ code, server }));
+
+describe("the reason the pairing screens show", () => {
+  it.layer(Fixture.layer, { excludeTestServices: true })((test) => {
+    test.effect("is the token, or why the code didn't pair", () =>
+      Effect.gen(function* explainsRefusal() {
+        const server = yield* Fixture;
+        const { code } = yield* server.newPairingCode;
+
+        expect(yield* redeem(server.origin, otherCode(code))).toEqual({
+          refusal: "wrong",
+        });
+        expect(yield* redeem(server.origin, code)).toEqual({
+          token: server.token,
+        });
+        expect(yield* redeem(server.origin, code)).toEqual({
+          refusal: "expired",
+        });
+      })
+    );
+
+    test.effect("is unreachable when no server answers", () =>
+      Effect.gen(function* explainsUnreachable() {
+        expect(yield* redeem("http://127.0.0.1:1", "123456")).toEqual({
+          refusal: "unreachable",
+        });
       })
     );
   });

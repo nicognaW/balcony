@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./server-address": "./src/server-address.ts",
-    "./transcript": "./src/transcript.ts"
+    "./transcript": "./src/transcript.ts",
+    "./react": "./src/react.ts"
   },
   "scripts": {
     "test": "bun --bun vitest run"
@@ -17,7 +18,14 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.1.2",
+    "@tanstack/react-query": "5.105.3",
+    "@types/react": "^19.3.0",
     "effect": "4.1.2",
+    "react": "^19.3.1",
     "vitest": "5.1.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "5.105.3",
+    "react": "^19.3.1"
   }
 }

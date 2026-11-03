@@ -3,6 +3,7 @@
 // T3 Tools Inc., apps/mobile/src/features/threads/thread-list-v2-items.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
+import { useNow, useSettle } from "@balcony/client/react";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
@@ -10,8 +11,7 @@ import {
 } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 
-import { useNow } from "../hooks/use-now.ts";
-import { useSettle } from "../hooks/use-session-marks.ts";
+import { usePaired } from "../hooks/use-paired.ts";
 import { Icon } from "./icon.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
@@ -66,7 +66,7 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
 
 /** Settles the session, or un-settles it when it is Settled. */
 const SettleButton = ({ row }: { readonly row: Row }) => {
-  const settle = useSettle();
+  const settle = useSettle(usePaired().connection.client);
   const settled = row.session.settledAt !== null;
 
   return (
