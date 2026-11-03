@@ -65,21 +65,18 @@ interface Entries {
 const noEntries: Entries = { ids: new Set(), list: [] };
 
 const parseEntries = (known: Entries, bytes: Uint8Array): Entries => {
-  const added = linesOf(bytes)
-    .flatMap(entriesOfLine)
-    .filter((entry) => !known.ids.has(entry.id));
+  let ids: Set<string> | undefined;
+  const added: TranscriptEntry[] = [];
 
-  if (added.length === 0) {
-    return known;
+  for (const entry of linesOf(bytes).flatMap(entriesOfLine)) {
+    if (!(ids ?? known.ids).has(entry.id)) {
+      ids ??= new Set(known.ids);
+      ids.add(entry.id);
+      added.push(entry);
+    }
   }
 
-  const ids = new Set(known.ids);
-
-  for (const { id } of added) {
-    ids.add(id);
-  }
-
-  return { ids, list: [...known.list, ...added] };
+  return ids === undefined ? known : { ids, list: [...known.list, ...added] };
 };
 
 /** How many transcripts keep their entries in memory for paging and watching. */

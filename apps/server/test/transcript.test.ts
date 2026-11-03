@@ -1,5 +1,5 @@
 // Seam A: Transcripts through the generated client, against fixture sessions.
-import { appendFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { connect } from "@balcony/client";
@@ -19,6 +19,33 @@ const fixtureId = (name: string): string => {
 
   return id;
 };
+
+/** A user prompt line of a Claude transcript. */
+const promptLine = (sessionId: string, uuid: string, text: string) =>
+  JSON.stringify({
+    cwd: "/Users/nico/code/shop-api",
+    isSidechain: false,
+    message: { content: text, role: "user" },
+    origin: { kind: "human" },
+    sessionId,
+    timestamp: "2026-01-15T11:30:00.000Z",
+    type: "user",
+    uuid,
+  });
+
+/** The transcript file of a new session in the shop-api project. */
+const newTranscriptFile = Effect.fn("newTranscriptFile")(
+  function* newTranscriptFile(sessionId: string) {
+    const { claude } = yield* Fixture;
+
+    return path.join(
+      claude,
+      "projects",
+      "-Users-nico-code-shop-api",
+      `${sessionId}.jsonl`
+    );
+  }
+);
 
 const client = Effect.gen(function* makeClient() {
   const { server } = yield* Fixture;
@@ -282,6 +309,37 @@ describe("Transcripts over the oRPC WebSocket", () => {
         );
 
         expect(traversal).toMatchObject({ code: "NOT_FOUND" });
+      })
+    );
+
+    test.effect("shows a line Claude wrote twice once", () =>
+      Effect.gen(function* writtenTwice() {
+        const { transcript } = yield* client;
+        const sessionId = "7a000000-0000-4000-8000-000000000001";
+        const file = yield* newTranscriptFile(sessionId);
+
+        const first = promptLine(
+          sessionId,
+          "7a000000-0000-4000-8000-0000000000a1",
+          "First."
+        );
+
+        const second = promptLine(
+          sessionId,
+          "7a000000-0000-4000-8000-0000000000a2",
+          "Second."
+        );
+
+        yield* Effect.promise(() =>
+          writeFile(file, `${first}\n${first}\n${second}\n`)
+        );
+
+        const page = yield* call(() => transcript.read({ sessionId }));
+
+        expect(page.entries.map((entry) => entry.id)).toEqual([
+          "7a000000-0000-4000-8000-0000000000a1",
+          "7a000000-0000-4000-8000-0000000000a2",
+        ]);
       })
     );
 
