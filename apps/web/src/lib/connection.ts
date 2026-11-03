@@ -1,12 +1,12 @@
 // The connection to the Balcony server, made once when the page loads.
-import { connect } from "@balcony/client";
+import { connect, exchangePairingCode } from "@balcony/client";
 import type { Connection } from "@balcony/client";
 import { ORPCError } from "@orpc/client";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryClient } from "@tanstack/react-query";
 import { createContext } from "react";
 
-import { loadToken, takeTokenFromUrl } from "./pairing.ts";
+import { loadToken, saveToken, takeTokenFromUrl } from "./pairing.ts";
 
 const makeOrpc = (connection: Connection) =>
   createTanstackQueryUtils(connection.client);
@@ -27,6 +27,12 @@ export const PairedContext = createContext<Paired | null>(null);
 export const isUnauthorized = (error: Error | null): boolean =>
   error instanceof ORPCError && error.code === "UNAUTHORIZED";
 
+const connectWith = (token: string): PairedConnection => {
+  const connection = connect({ server: window.location.origin, token });
+
+  return { connection, orpc: makeOrpc(connection) };
+};
+
 /**
  * Connects with the token from the address (`#token=…`) or from storage;
  * null when this phone isn't paired.
@@ -34,13 +40,65 @@ export const isUnauthorized = (error: Error | null): boolean =>
 export const connectPaired = (): PairedConnection | null => {
   const token = takeTokenFromUrl() ?? loadToken();
 
-  if (token === null) {
-    return null;
+  return token === null ? null : connectWith(token);
+};
+
+/**
+ * Why a short code didn't pair: the contract's pairing errors, `unreachable`
+ * when the server couldn't be reached, `other` for anything else.
+ */
+export type PairingRefusal =
+  | "wrong"
+  | "expired"
+  | "locked"
+  | "unreachable"
+  | "other";
+
+const refusalOf = (code: string): PairingRefusal => {
+  switch (code) {
+    case "PAIRING_CODE_WRONG": {
+      return "wrong";
+    }
+
+    case "PAIRING_CODE_EXPIRED": {
+      return "expired";
+    }
+
+    case "PAIRING_CODE_LOCKED": {
+      return "locked";
+    }
+
+    default: {
+      return "other";
+    }
   }
+};
 
-  const connection = connect({ server: window.location.origin, token });
+/**
+ * Exchanges the short code `balcony` shows for the token, stores it and
+ * connects with it.
+ */
+export const pairWithCode = async (
+  code: string
+): Promise<
+  { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
+> => {
+  try {
+    const token = await exchangePairingCode({
+      code,
+      server: window.location.origin,
+    });
 
-  return { connection, orpc: makeOrpc(connection) };
+    saveToken(token);
+
+    return { paired: connectWith(token) };
+  } catch (error) {
+    if (!(error instanceof ORPCError)) {
+      return { refusal: "unreachable" };
+    }
+
+    return { refusal: refusalOf(error.code) };
+  }
 };
 
 export const queryClient = new QueryClient({
