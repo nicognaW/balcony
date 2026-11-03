@@ -16,6 +16,8 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 Cloud sessions: the stop hook's "Unverified" warning is expected; leave commits as authored.
 
+Codex runs the `.codex/hooks.json` Stop hook only in a trusted project, after you trust it at the "Hooks need review" prompt.
+
 # Ultracite Code Standards
 
 This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting.

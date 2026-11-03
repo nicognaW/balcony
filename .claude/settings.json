@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bunx --no-install uncheck hooks run --fix",
+            "command": "sh -c 'uncheck=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/node_modules/.bin/uncheck\"; [ -x \"$uncheck\" ] || exit 0; exec \"$uncheck\" hooks run --fix'",
             "timeout": 600
           }
         ]
