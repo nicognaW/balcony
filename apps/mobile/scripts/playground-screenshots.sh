@@ -48,11 +48,23 @@ for node in re.finditer(r"<node [^>]*>", xml):
 ' "$1"
 }
 
+# Answers "Wait" to an emulator "<app> isn't responding" dialog, if one is up.
+dismiss_anr() {
+  local point
+  point=$(centre_of "Wait" || true)
+  if [ -n "$point" ]; then
+    # shellcheck disable=SC2086
+    adb shell input tap $point
+    sleep 1
+  fi
+}
+
 # The centre of the view labelled $1, waiting a few seconds for it to appear.
 # Empty (and a "missing-" screenshot) when it never does.
 find_view() {
   local point=""
   for _ in $(seq 1 8); do
+    dismiss_anr
     point=$(centre_of "$1" || true)
     if [ -n "$point" ]; then
       echo "$point"
