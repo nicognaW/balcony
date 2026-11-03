@@ -1,14 +1,17 @@
 // A session's Transcript, full screen. It opens on the newest entries, pages
 // back with "Load earlier" and follows new entries live. Sessions are
 // View-only, so there is no message box.
-import { isUnauthorized } from "@balcony/client";
-import { useMarkViewed, useTranscript } from "@balcony/client/react";
+import {
+  useMarkViewed,
+  usePaired,
+  useTranscript,
+  useUnpairWhenRefused,
+} from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { TranscriptEntryRow } from "@/components/transcript/transcript-entry.tsx";
-import { usePaired } from "@/hooks/use-paired.ts";
 
 /** The class for each `spaceAbove`. */
 const SPACE_ABOVE = { loose: "mt-4", none: "", tight: "mt-0.5" } as const;
@@ -49,18 +52,14 @@ const Message = ({ children }: { readonly children: string }) => (
 
 const TranscriptScreen = () => {
   const { sessionId } = useParams({ from: "/s/$sessionId" });
-  const { connection, orpc, unpair } = usePaired();
+  const { connection, orpc } = usePaired();
   // Opening the session clears Done on every client.
   useMarkViewed(connection.client, sessionId);
 
   const { error, loadEarlier, loadingEarlier, notFound, transcript } =
     useTranscript(orpc, sessionId);
 
-  useEffect(() => {
-    if (isUnauthorized(error)) {
-      unpair();
-    }
-  }, [error, unpair]);
+  useUnpairWhenRefused(error);
 
   // Follow new entries while the reader is at the bottom; keep the reader's
   // place when earlier entries are added above.

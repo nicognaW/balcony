@@ -1,14 +1,17 @@
-import { isUnauthorized, settledPage } from "@balcony/client";
+import { settledPage } from "@balcony/client";
 import type { SessionRow as Row } from "@balcony/client";
-import { useSessionList } from "@balcony/client/react";
+import {
+  usePaired,
+  useSessionList,
+  useUnpairWhenRefused,
+} from "@balcony/client/react";
 import type { Session } from "@balcony/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 import { SessionRow } from "@/components/session-row.tsx";
-import { usePaired } from "@/hooks/use-paired.ts";
 
 const Rows = ({ rows }: { readonly rows: readonly Row[] }) => (
   <ul className="flex flex-col gap-2">
@@ -110,17 +113,13 @@ const Sections = ({
 };
 
 const SessionList = () => {
-  const { orpc, unpair } = usePaired();
+  const { orpc } = usePaired();
 
   const { data, dataUpdatedAt, error } = useQuery(
     orpc.sessions.watch.liveOptions()
   );
 
-  useEffect(() => {
-    if (isUnauthorized(error)) {
-      unpair();
-    }
-  }, [error, unpair]);
+  useUnpairWhenRefused(error);
 
   if (data === undefined) {
     return (

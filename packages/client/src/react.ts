@@ -9,10 +9,27 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-import { createSessionList, isUnauthorized } from "./index.ts";
-import type { Connection, ConnectionState, SessionListView } from "./index.ts";
+import {
+  connect,
+  createSessionList,
+  isUnauthorized,
+  redeemPairingCode,
+} from "./index.ts";
+import type {
+  Connection,
+  ConnectionState,
+  PairingRefusal,
+  SessionListView,
+} from "./index.ts";
 import {
   earliestId,
   joinTranscript,
@@ -26,6 +43,86 @@ export const orpcOf = (connection: Connection) =>
   createTanstackQueryUtils(connection.client);
 
 export type Orpc = ReturnType<typeof orpcOf>;
+
+/** A connection to the paired server, as the app shares it. */
+export interface PairedConnection {
+  /** The server's origin, e.g. `http://192.168.1.20:7766`. */
+  readonly server: string;
+  readonly connection: Connection;
+  readonly orpc: Orpc;
+}
+
+/** Connects to a server with its pairing token. */
+export const connectTo = ({
+  server,
+  token,
+}: {
+  readonly server: string;
+  readonly token: string;
+}): PairedConnection => {
+  const connection = connect({ server, token });
+
+  return { connection, orpc: orpcOf(connection), server };
+};
+
+/**
+ * Exchanges the short code `balcony` shows for the token, has `save` keep
+ * it, and connects. Fails only when `save` does.
+ */
+export const pairWithCode = async ({
+  code,
+  save,
+  server,
+}: {
+  readonly code: string;
+  readonly save: (token: string) => Promise<void> | void;
+  readonly server: string;
+}): Promise<
+  { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
+> => {
+  const result = await redeemPairingCode({ code, server });
+
+  if ("refusal" in result) {
+    return result;
+  }
+
+  await save(result.token);
+
+  return { paired: connectTo({ server, token: result.token }) };
+};
+
+export interface Paired extends PairedConnection {
+  /**
+   * Closes the connection, forgets the token and returns to pairing:
+   * `refused` when the server no longer accepts it, `asked` when the user
+   * chose to pair again.
+   */
+  readonly unpair: (reason: "refused" | "asked") => void;
+}
+
+/** The paired connection, null while the app isn't paired. */
+export const PairedContext = createContext<Paired | null>(null);
+
+export const usePaired = (): Paired => {
+  const paired = use(PairedContext);
+
+  if (paired === null) {
+    throw new Error("usePaired needs a paired PairedContext");
+  }
+
+  return paired;
+};
+
+/** Unpairs when a call's `error` says the server refused the token. */
+export const useUnpairWhenRefused = (error: Error | null) => {
+  const { unpair } = usePaired();
+
+  useEffect(() => {
+    if (isUnauthorized(error)) {
+      unpair("refused");
+    }
+  }, [error, unpair]);
+};
 
 /** The query client for live data, the same in both apps. */
 export const createQueryClient = (): QueryClient =>

@@ -2,14 +2,16 @@
 // back with "Load earlier" and follows new entries live. The list is
 // inverted, so it starts at the bottom and keeps the reader's place when
 // entries arrive. Sessions are View-only, so there is no message box.
-import { isUnauthorized } from "@balcony/client";
-import { useMarkViewed, useTranscript } from "@balcony/client/react";
+import {
+  useMarkViewed,
+  usePaired,
+  useTranscript,
+  useUnpairWhenRefused,
+} from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
-import { useEffect } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 
 import { TranscriptEntryRow } from "../components/transcript-entry.tsx";
-import { usePaired } from "../hooks/use-paired.ts";
 import type { ScreenProps } from "../navigation.ts";
 
 /** The class for each `spaceAbove`. */
@@ -45,17 +47,13 @@ const LoadEarlier = ({
 
 export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
   const { sessionId } = route.params;
-  const { connection, orpc, unpair } = usePaired();
+  const { connection, orpc } = usePaired();
   useMarkViewed(connection.client, sessionId);
 
   const { error, loadEarlier, loadingEarlier, notFound, transcript } =
     useTranscript(orpc, sessionId);
 
-  useEffect(() => {
-    if (isUnauthorized(error)) {
-      unpair("refused");
-    }
-  }, [error, unpair]);
+  useUnpairWhenRefused(error);
 
   if (transcript === undefined) {
     return (

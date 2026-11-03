@@ -3,11 +3,9 @@
 // (c) 2026 T3 Tools Inc., apps/web/src/components/sidebar/SidebarThreadRow.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
-import { useNow, useSettle } from "@balcony/client/react";
+import { useNow, usePaired, useSettle } from "@balcony/client/react";
 import { Link } from "@tanstack/react-router";
 import { CircleCheckIcon, CircleDashedIcon, GitBranchIcon } from "lucide-react";
-
-import { usePaired } from "@/hooks/use-paired.ts";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);

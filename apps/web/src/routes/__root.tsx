@@ -1,3 +1,4 @@
+import { usePaired } from "@balcony/client/react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createRootRoute,
@@ -8,7 +9,6 @@ import {
 import { ArrowLeftIcon } from "lucide-react";
 
 import { ConnectionIndicator } from "@/components/connection-indicator.tsx";
-import { usePaired } from "@/hooks/use-paired.ts";
 
 /** Back to the list, and the open session's project and title. */
 const SessionHeading = ({ sessionId }: { readonly sessionId: string }) => {

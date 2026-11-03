@@ -1,8 +1,7 @@
 // Adapted from T3 Code's ConnectionStatusDot (MIT, (c) 2026 T3 Tools Inc.).
 import type { ConnectionState } from "@balcony/client";
-import { useConnectionState } from "@balcony/client/react";
+import { useConnectionState, usePaired } from "@balcony/client/react";
 
-import { usePaired } from "@/hooks/use-paired.ts";
 import { cn } from "@/lib/utils";
 
 const LABELS: Record<ConnectionState, string> = {
