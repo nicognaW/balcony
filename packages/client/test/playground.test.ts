@@ -104,7 +104,7 @@ describe("edge cases", () => {
       [...page.entries, ...update.entries].map((entry) => entry.kind)
     );
 
-    expect([...kinds].toSorted()).toEqual([
+    expect([...kinds].sort()).toEqual([
       "agent-text",
       "command-run",
       "file-change",

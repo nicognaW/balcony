@@ -75,7 +75,7 @@ const newestFirst = (
 ): Session[] => {
   const keys = new Map(sessions.map((session) => [session, key(session)]));
 
-  return sessions.toSorted(
+  return [...sessions].sort(
     (left, right) =>
       (keys.get(right) ?? 0) - (keys.get(left) ?? 0) ||
       left.id.localeCompare(right.id)

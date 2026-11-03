@@ -128,7 +128,7 @@ export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
         ) : undefined
       }
       contentContainerClassName="px-4 pt-6 pb-2"
-      data={entries.toReversed()}
+      data={[...entries].reverse()}
       inverted
       keyExtractor={(entry) => entry.id}
       renderItem={({ index, item }) => (

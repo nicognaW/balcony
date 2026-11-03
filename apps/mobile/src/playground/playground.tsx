@@ -191,7 +191,7 @@ const Panel = ({
               Mac or changes your pairing.
             </Text>
             <View className="gap-2">
-              <SectionTitle>Connection</SectionTitle>
+              <SectionTitle>Connection now</SectionTitle>
               <View className="flex-row flex-wrap gap-2">
                 {CONNECTIONS.map((option) => (
                   <Chip
@@ -204,7 +204,7 @@ const Panel = ({
               </View>
             </View>
             <View className="gap-2">
-              <SectionTitle>Live</SectionTitle>
+              <SectionTitle>Live changes</SectionTitle>
               <View className="flex-row gap-2">
                 <ActionButton
                   disabled={!hasSessions}
@@ -220,7 +220,7 @@ const Panel = ({
             </View>
             {[...GROUPS].map(([group, members]) => (
               <View className="gap-2" key={group}>
-                <SectionTitle>{group}</SectionTitle>
+                <SectionTitle>{`${group} scenarios`}</SectionTitle>
                 {members.map((scenario) => (
                   <ScenarioOption
                     key={scenario.id}

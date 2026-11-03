@@ -4,6 +4,10 @@
 import { Component } from "react";
 import type { ReactNode } from "react";
 import { ScrollView, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { withUniwind } from "uniwind";
+
+const SafeArea = withUniwind(SafeAreaView);
 
 interface State {
   readonly error: Error | null;
@@ -33,14 +37,16 @@ export class PlaygroundErrorBoundary extends Component<
     }
 
     return (
-      <ScrollView contentContainerClassName="gap-2 p-4">
-        <Text className="text-destructive-foreground text-base font-semibold">
-          {error.message}
-        </Text>
-        <Text className="text-muted-foreground font-mono text-xs">
-          {error.stack}
-        </Text>
-      </ScrollView>
+      <SafeArea className="flex-1" edges={["top"]}>
+        <ScrollView contentContainerClassName="gap-2 p-4">
+          <Text className="text-destructive-foreground text-base font-semibold">
+            {error.message}
+          </Text>
+          <Text className="text-muted-foreground font-mono text-xs">
+            {error.stack}
+          </Text>
+        </ScrollView>
+      </SafeArea>
     );
   }
 }
