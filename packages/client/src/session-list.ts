@@ -47,6 +47,10 @@ export interface SessionListUpdate {
   readonly nextChangeAt: number | null;
 }
 
+/** A session's title to show: `Untitled session` when it has none. */
+export const sessionTitle = (session: Pick<Session, "title">): string =>
+  session.title.trim() === "" ? "Untitled session" : session.title;
+
 /**
  * How long a session that stopped stays in Working. A turn can end moments
  * before the next one starts (a tool hands back, a queued message runs), so
@@ -136,7 +140,7 @@ const rowOf =
     mark: markOf(session, working),
     project: session.project,
     session,
-    title: session.title,
+    title: sessionTitle(session),
   });
 
 interface Tracked {

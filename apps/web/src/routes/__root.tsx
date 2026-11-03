@@ -1,3 +1,4 @@
+import { sessionTitle } from "@balcony/client";
 import { usePaired } from "@balcony/client/react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -28,7 +29,7 @@ const SessionHeading = ({ sessionId }: { readonly sessionId: string }) => {
       </Link>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">
-          {session?.title ?? "Session"}
+          {session === undefined ? "Session" : sessionTitle(session)}
         </p>
         {session === undefined ? null : (
           <p className="text-muted-foreground truncate text-xs">

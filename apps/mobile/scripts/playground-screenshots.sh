@@ -45,28 +45,43 @@ for node in re.finditer(r"<node [^>]*>", xml):
 ' "$1"
 }
 
-# Taps the view labelled $1; fails loudly if it isn't on screen.
+# The centre of the view labelled $1, waiting up to 30s for it to appear.
+# Empty (and a "missing-" screenshot) when it never does.
+find_view() {
+  local point=""
+  for _ in $(seq 1 15); do
+    point=$(centre_of "$1" || true)
+    if [ -n "$point" ]; then
+      echo "$point"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "No view labelled '$1' on screen" >&2
+  shot "missing-$(echo "$1" | tr -c 'a-zA-Z0-9' '-')"
+}
+
+# Taps the view labelled $1.
 tap() {
   local point
-  point=$(centre_of "$1")
-  if [ -z "$point" ]; then
-    echo "No view labelled '$1' on screen" >&2
-    shot "missing-$(echo "$1" | tr -c 'a-zA-Z0-9' '-')"
-    return 0
+  point=$(find_view "$1")
+  if [ -n "$point" ]; then
+    # shellcheck disable=SC2086
+    adb shell input tap $point
+    sleep "${2:-2}"
   fi
-  # shellcheck disable=SC2086
-  adb shell input tap $point
-  sleep "${2:-2}"
 }
 
 # Long-presses the view labelled $1.
 long_press() {
   local point
-  point=$(centre_of "$1")
-  # shellcheck disable=SC2086
-  set -- $point
-  adb shell input swipe "$1" "$2" "$1" "$2" 1200
-  sleep 3
+  point=$(find_view "$1")
+  if [ -n "$point" ]; then
+    # shellcheck disable=SC2086
+    set -- $point
+    adb shell input swipe "$1" "$2" "$1" "$2" 1200
+    sleep 3
+  fi
 }
 
 scroll_to_end() {
@@ -83,8 +98,8 @@ pass() {
 
   # The hidden entry: long-press the pairing title, then leave again.
   adb shell am force-stop "$package"
-  adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 >/dev/null
-  sleep 6
+  adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  find_view "Pair with your Mac" >/dev/null
   shot "pair-real$suffix"
   long_press "Pair with your Mac"
   shot "long-press-busy-day$suffix"

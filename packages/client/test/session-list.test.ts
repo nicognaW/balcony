@@ -401,3 +401,17 @@ describe("session list", () => {
     });
   });
 });
+
+describe("row titles", () => {
+  it("names a session with no title, or only spaces, Untitled session", () => {
+    const { view } = createSessionList().update(
+      [session("a", { title: "" }), session("b", { title: " \n " })],
+      at("12:00:00")
+    );
+
+    expect(view.main.map((row) => row.title)).toEqual([
+      "Untitled session",
+      "Untitled session",
+    ]);
+  });
+});

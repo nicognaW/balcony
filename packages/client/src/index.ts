@@ -9,6 +9,7 @@ export type { BalconyClient } from "@balcony/contracts";
 
 export {
   createSessionList,
+  sessionTitle,
   SETTLED_FIRST_PAGE,
   SETTLED_PAGE,
   settledPage,

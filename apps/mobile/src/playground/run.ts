@@ -1,5 +1,6 @@
 // A playground run: one scenario's fake server, query cache and the screens
 // it opens on, started from a deep link or the panel.
+import { sessionTitle } from "@balcony/client";
 import { createPlayground, scenarioOf } from "@balcony/client/playground";
 import type {
   Playground,
@@ -40,7 +41,7 @@ const navigationFor = (
         params: {
           project: session.project,
           sessionId: session.id,
-          title: session.title,
+          title: sessionTitle(session),
         },
       },
     ],

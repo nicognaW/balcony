@@ -27,7 +27,7 @@ const TranscriptTitle = () => {
         className="text-foreground text-base font-semibold"
         numberOfLines={1}
       >
-        {params.title === "" ? "Untitled session" : params.title}
+        {params.title}
       </Text>
       <Text className="text-muted-foreground text-xs" numberOfLines={1}>
         {params.project}
