@@ -35,16 +35,30 @@ export const SessionStatus = Schema.Literals(["working", "waiting"]);
 
 export type SessionStatus = typeof SessionStatus.Type;
 
+/** An ISO-8601 time, or null when the session has none yet. */
+const Time = Schema.NullOr(Schema.String);
+
 export const Session = Schema.Struct({
   agent: Agent,
+  /** The branch the session works on; null outside a repository or when detached. */
+  branch: Schema.NullOr(Schema.String),
   /** Unique across agents. */
   id: Schema.String,
   /** ISO-8601 time of the last user or agent message. */
   lastMessageAt: Schema.String,
+  /** When the user last sent the agent a message. */
+  lastUserMessageAt: Time,
   /** Label for the session's working directory, e.g. its folder name. */
   project: Schema.String,
   status: SessionStatus,
   title: Schema.String,
+  /** When the agent last finished a turn. */
+  turnEndedAt: Time,
+  /**
+   * When the agent's latest turn began: the user's message, or whatever else
+   * woke the agent (a finished background task, another session).
+   */
+  turnStartedAt: Time,
 });
 
 export type Session = typeof Session.Type;
@@ -56,7 +70,39 @@ export const SessionList = Schema.Struct({
 
 export type SessionList = typeof SessionList.Type;
 
+/** The short pairing code `balcony` shows, typed in on the phone. */
+export const PairingCodeInput = Schema.Struct({ code: Schema.String });
+
+export type PairingCodeInput = typeof PairingCodeInput.Type;
+
+/** The long-lived token the short code is exchanged for. */
+export const PairingToken = Schema.Struct({ token: Schema.String });
+
+export type PairingToken = typeof PairingToken.Type;
+
+/**
+ * Why a short code was refused. WRONG: not the code on the Mac (`attemptsLeft`
+ * more tries). EXPIRED: no code is live, because it timed out or was already
+ * used. LOCKED: too many wrong tries. Expired and locked codes need a new code
+ * from the Mac.
+ */
+export const pairingErrors = {
+  PAIRING_CODE_EXPIRED: { message: "The pairing code has expired." },
+  PAIRING_CODE_LOCKED: { message: "Too many wrong pairing codes." },
+  PAIRING_CODE_WRONG: {
+    data: std(Schema.Struct({ attemptsLeft: Schema.Number })),
+    message: "That isn't the pairing code.",
+  },
+} as const;
+
 export const contract = {
+  pairing: {
+    /** Exchanges the short code for the token. Needs no token itself. */
+    exchange: oc
+      .errors(pairingErrors)
+      .input(std(PairingCodeInput))
+      .output(std(PairingToken)),
+  },
   sessions: {
     /** The current session list, then a new list on every change. */
     watch: oc.output(asyncIteratorObject(std(SessionList))),

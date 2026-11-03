@@ -82,6 +82,11 @@
         "@balcony/contracts": "workspace:*",
         "@orpc/client": "2.0.0-beta.48",
       },
+      "devDependencies": {
+        "@effect/vitest": "4.1.2",
+        "effect": "4.1.2",
+        "vitest": "5.1.0",
+      },
     },
     "packages/contracts": {
       "name": "@balcony/contracts",

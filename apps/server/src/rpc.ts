@@ -7,10 +7,13 @@ import type { WithEffectContext } from "@orpc/effect";
 import { implement, ORPCError } from "@orpc/server";
 import { Effect, Option, Stream } from "effect";
 
+import { PairingCodes } from "./pairing-code.ts";
 import { Sessions } from "./sessions.ts";
 import { Transcripts } from "./transcripts.ts";
 
-export interface RpcContext extends WithEffectContext<Sessions | Transcripts> {
+export interface RpcContext extends WithEffectContext<
+  PairingCodes | Sessions | Transcripts
+> {
   /** The token the socket connected with, from its `?token=` parameter. */
   readonly token: string | null;
   /** The server's token. */
@@ -59,6 +62,33 @@ const orNotFound = <A>(found: Option.Option<A>) =>
   });
 
 export const router = os.router({
+  pairing: {
+    // Deliberately not `authed`: this is how a phone gets the token.
+    exchange: os.pairing.exchange.effect(function* exchangePairingCode({
+      errors,
+      input,
+    }) {
+      const codes = yield* PairingCodes;
+
+      const token = yield* codes
+        .exchange(input.code.replaceAll(/\D/gu, ""))
+        .pipe(
+          Effect.mapError((refused) => {
+            if (refused.reason === "wrong") {
+              return errors.PAIRING_CODE_WRONG({
+                data: { attemptsLeft: refused.attemptsLeft },
+              });
+            }
+
+            return refused.reason === "expired"
+              ? errors.PAIRING_CODE_EXPIRED()
+              : errors.PAIRING_CODE_LOCKED();
+          })
+        );
+
+      return { token };
+    }),
+  },
   sessions: {
     watch: os.sessions.watch.use(authed).effect(function* watchSessions() {
       const sessions = yield* Sessions;

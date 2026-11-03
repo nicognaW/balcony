@@ -9,6 +9,8 @@ import type { Duration } from "effect";
 
 import { AgentSources } from "./agents/agent-source.ts";
 import { makeClaudeSource } from "./agents/claude/claude-source.ts";
+import { makePairingCodes, PairingCodes } from "./pairing-code.ts";
+import type { PairingCode } from "./pairing-code.ts";
 import { router } from "./rpc.ts";
 import type { RpcContext } from "./rpc.ts";
 import { Sessions } from "./sessions.ts";
@@ -23,6 +25,8 @@ export interface ServerOptions {
   readonly hostname: string;
   /** How often agent files are checked for changes. */
   readonly pollInterval?: Duration.Input;
+  /** The current time in epoch ms, for session activity and pairing code expiry. Defaults to `Date.now`. */
+  readonly now?: () => number;
   /** The built web app. Defaults to `apps/web/dist`. */
   readonly webRoot?: string;
 }
@@ -32,6 +36,8 @@ export interface RunningServer {
   readonly origin: string;
   readonly port: number;
   readonly token: string;
+  /** Issues a short pairing code to show, replacing the previous one. */
+  readonly newPairingCode: Effect.Effect<PairingCode>;
 }
 
 const defaultWebRoot = fileURLToPath(
@@ -83,15 +89,25 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   options: ServerOptions
 ) {
   const token = yield* loadOrCreateToken(path.join(options.home, ".balcony"));
+  const now = options.now ?? Date.now;
 
   const claude = yield* makeClaudeSource({
     claudeDir: path.join(options.home, ".claude"),
+    now,
     pollInterval: options.pollInterval ?? "1 second",
   });
 
+  const pairingCodes = yield* makePairingCodes({
+    now,
+    token,
+  });
+
   const context = yield* Layer.build(
-    Layer.mergeAll(Sessions.layer, Transcripts.layer).pipe(
-      Layer.provide(Layer.succeed(AgentSources, [claude]))
+    Layer.merge(
+      Layer.mergeAll(Sessions.layer, Transcripts.layer).pipe(
+        Layer.provide(Layer.succeed(AgentSources, [claude]))
+      ),
+      Layer.succeed(PairingCodes, pairingCodes)
     )
   );
 
@@ -142,6 +158,7 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   const port = server.port ?? options.port;
 
   const running: RunningServer = {
+    newPairingCode: pairingCodes.issue,
     origin: `http://${options.hostname}:${port}`,
     port,
     token,
