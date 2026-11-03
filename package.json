@@ -7,6 +7,9 @@
   ],
   "type": "module",
   "scripts": {
+    "balcony": "bun run build && bun apps/server/src/main.ts",
+    "build": "bun run --filter @balcony/web build",
+    "test": "bun run --filter '*' test",
     "check": "uncheck",
     "fix": "uncheck --fix",
     "prepare": "uncheck prepare --pre-commit || exit 0",
