@@ -1,13 +1,7 @@
-import { defineConfig } from "oxlint";
+import react from "ultracite/oxlint/react";
 import reactNative from "ultracite/oxlint/react-native";
 
-import root from "../../oxlint.config.ts";
+import { reactWorkspace } from "../../oxlint.config.ts";
 
-// Oxlint lints each file with its nearest config alone, so this extends the
-// root config and repeats the properties that extends doesn't carry over.
-export default defineConfig({
-  env: root.env,
-  extends: [root, reactNative],
-  ignorePatterns: root.ignorePatterns,
-  settings: root.settings,
-});
+// react-native has no oxlint rules of its own, so React's come from react.
+export default reactWorkspace(react, reactNative);
