@@ -1,0 +1,9 @@
+{
+  "name": "@balcony/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
+}

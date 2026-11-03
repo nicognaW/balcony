@@ -1,0 +1,27 @@
+{
+  "name": "balcony",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "uncheck",
+    "fix": "uncheck --fix",
+    "prepare": "uncheck prepare --pre-commit || exit 0",
+    "doctor": "REACT_DOCTOR_NO_TELEMETRY=1 react-doctor --no-telemetry"
+  },
+  "devDependencies": {
+    "@shadcn/lint": "^0.2.3",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "oxlint-plugin-react-doctor": "0.9.22",
+    "react-doctor": "0.9.22",
+    "sherif": "^1.13.0",
+    "typescript": "^7.0.2",
+    "ultracite": "8.1.1",
+    "uncheck": "^0.1.1"
+  },
+  "packageManager": "bun@1.4.4"
+}
