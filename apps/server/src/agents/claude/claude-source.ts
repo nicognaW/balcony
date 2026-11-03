@@ -10,7 +10,7 @@ import { Effect, FileSystem, Option, Schedule, Stream } from "effect";
 import type { AgentSource } from "../agent-source.ts";
 import { parseStatusFile, statusFilePid } from "./status-files.ts";
 import type { LiveStatus } from "./status-files.ts";
-import { emptySummary, foldLine, titleOf } from "./transcript.ts";
+import { branchOf, emptySummary, foldLine, titleOf } from "./transcript.ts";
 import type { TranscriptSummary } from "./transcript.ts";
 
 export interface ClaudeSourceOptions {
@@ -18,7 +18,12 @@ export interface ClaudeSourceOptions {
   readonly claudeDir: string;
   /** How often to look for changes. */
   readonly pollInterval: Duration.Input;
+  /** The current time in epoch ms; tests pin it to the fixtures' time. */
+  readonly now: () => number;
 }
+
+/** Sessions are listed while their last message is this recent. */
+const LIST_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** How far into a transcript we've read, and what it said so far. */
 interface TranscriptState {
@@ -43,7 +48,11 @@ const parseLines = (bytes: Uint8Array, summary: TranscriptSummary) => {
 };
 
 export const makeClaudeSource = Effect.fn("makeClaudeSource")(
-  function* makeClaudeSource({ claudeDir, pollInterval }: ClaudeSourceOptions) {
+  function* makeClaudeSource({
+    claudeDir,
+    now,
+    pollInterval,
+  }: ClaudeSourceOptions) {
     const fs = yield* FileSystem.FileSystem;
     const projectsDir = path.join(claudeDir, "projects");
     const sessionsDir = path.join(claudeDir, "sessions");
@@ -54,17 +63,29 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
         .readDirectory(dir)
         .pipe(Effect.orElseSucceed((): readonly string[] => []));
 
-    /** Reads what was appended to a transcript since the last look. */
+    /**
+     * Reads what was appended to a transcript since the last look, or nothing
+     * when the file hasn't changed since `cutoff`: its last message is
+     * older still, so it isn't listed and needn't be read.
+     */
     const readTranscript = Effect.fn("readTranscript")(function* readTranscript(
-      file: string
+      file: string,
+      cutoff: number
     ) {
       const info = yield* fs.stat(file);
       const size = Number(info.size);
-      const mtime = Option.getOrElse(info.mtime, () => new Date(0)).getTime();
+      const mtime = Option.getOrElse(info.mtime, () => new Date()).getTime();
+
+      if (mtime < cutoff) {
+        transcripts.delete(file);
+
+        return Option.none<TranscriptState>();
+      }
+
       const known = transcripts.get(file);
 
       if (known !== undefined && known.size === size && known.mtime === mtime) {
-        return known;
+        return Option.some(known);
       }
 
       // A file that shrank was rewritten: start over.
@@ -94,46 +115,53 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
 
       transcripts.set(file, state);
 
-      return state;
+      return Option.some(state);
     });
 
-    const readTranscripts = Effect.gen(function* readTranscripts() {
-      const seen = new Set<string>();
+    const readTranscripts = Effect.fn("readTranscripts")(
+      function* readTranscripts(cutoff: number) {
+        const seen = new Set<string>();
 
-      const found: {
-        id: string;
-        summary: TranscriptSummary;
-        projectDir: string;
-      }[] = [];
+        const found: {
+          id: string;
+          summary: TranscriptSummary;
+          projectDir: string;
+        }[] = [];
 
-      for (const projectDir of yield* listDir(projectsDir)) {
-        for (const name of yield* listDir(path.join(projectsDir, projectDir))) {
-          if (!name.endsWith(".jsonl")) {
-            continue;
-          }
+        for (const projectDir of yield* listDir(projectsDir)) {
+          for (const name of yield* listDir(
+            path.join(projectsDir, projectDir)
+          )) {
+            if (!name.endsWith(".jsonl")) {
+              continue;
+            }
 
-          const file = path.join(projectsDir, projectDir, name);
-          seen.add(file);
-          const state = yield* Effect.option(readTranscript(file));
+            const file = path.join(projectsDir, projectDir, name);
+            seen.add(file);
 
-          if (Option.isSome(state)) {
-            found.push({
-              id: name.slice(0, -6),
-              projectDir,
-              summary: state.value.summary,
-            });
+            const state = yield* readTranscript(file, cutoff).pipe(
+              Effect.orElseSucceed(() => Option.none<TranscriptState>())
+            );
+
+            if (Option.isSome(state)) {
+              found.push({
+                id: name.slice(0, -6),
+                projectDir,
+                summary: state.value.summary,
+              });
+            }
           }
         }
-      }
 
-      for (const file of transcripts.keys()) {
-        if (!seen.has(file)) {
-          transcripts.delete(file);
+        for (const file of transcripts.keys()) {
+          if (!seen.has(file)) {
+            transcripts.delete(file);
+          }
         }
-      }
 
-      return found;
-    });
+        return found;
+      }
+    );
 
     /** The newest trusted status per session id. */
     const readStatuses = Effect.gen(function* readStatuses() {
@@ -170,11 +198,14 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const scan = Effect.gen(function* scan() {
       const statuses = yield* readStatuses;
       const byId = new Map<string, Session>();
+      const cutoff = now() - LIST_WINDOW_MS;
 
-      for (const { id, projectDir, summary } of yield* readTranscripts) {
+      for (const { id, projectDir, summary } of yield* readTranscripts(
+        cutoff
+      )) {
         const { lastMessageAt } = summary;
 
-        if (lastMessageAt === undefined) {
+        if (lastMessageAt === undefined || Date.parse(lastMessageAt) < cutoff) {
           continue;
         }
 
@@ -191,8 +222,10 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
 
         byId.set(id, {
           agent: "claude",
+          branch: branchOf(summary),
           id,
           lastMessageAt,
+          lastUserMessageAt: summary.lastUserMessageAt ?? null,
           // The folder name encodes the cwd lossily; never decode it.
           project:
             summary.cwd === undefined ? projectDir : path.basename(summary.cwd),
@@ -200,6 +233,8 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           // now; deriving it from the transcript is ticket #6.
           status: statuses.get(id)?.status ?? "waiting",
           title: titleOf(summary),
+          turnEndedAt: summary.turnEndedAt ?? null,
+          turnStartedAt: summary.turnStartedAt ?? null,
         });
       }
 

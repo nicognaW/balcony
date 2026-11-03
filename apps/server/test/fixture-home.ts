@@ -1,15 +1,25 @@
 // A temporary home folder filled with the fixture Claude files in
 // test/fixtures (see test/fixtures/manifest.json for what each one covers).
-import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 const fixtures = fileURLToPath(new URL("fixtures", import.meta.url));
 
 interface Manifest {
+  readonly fixtureNow: string;
   readonly sessions: Record<string, { readonly sessionId: string }>;
   readonly statusFiles: Record<string, { readonly pid: "live" | "dead" }>;
 }
@@ -25,6 +35,9 @@ export const fixtureSessions = Object.fromEntries(
     sessionId,
   ])
 );
+
+/** The time the fixtures were recorded at, in epoch ms. */
+export const fixtureNow = Date.parse(manifest.fixtureNow);
 
 export interface FixtureHome {
   readonly home: string;
@@ -46,6 +59,44 @@ const deadPid = Effect.promise(async () => {
 
   return child.pid;
 });
+
+const Timestamped = Schema.Struct({ timestamp: Schema.String });
+
+const decodeTimestamped = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Timestamped)
+);
+
+/**
+ * Sets each transcript's modification time to its newest line, as if Claude
+ * had written it at fixture time rather than when the test copied it.
+ */
+const ageTranscripts = async (claude: string) => {
+  const entries = await readdir(path.join(claude, "projects"), {
+    recursive: true,
+    withFileTypes: true,
+  });
+
+  const transcripts = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(entry.parentPath, entry.name));
+
+  await Promise.all(
+    transcripts.map(async (file) => {
+      const text = await readFile(file, "utf-8");
+
+      const times = text
+        .split("\n")
+        .flatMap((line) =>
+          Option.toArray(decodeTimestamped(line)).map(({ timestamp }) =>
+            Date.parse(timestamp)
+          )
+        );
+
+      const newest = new Date(Math.max(...times));
+      await utimes(file, newest, newest);
+    })
+  );
+};
 
 /**
  * Copies the fixture home into a temp folder. Status files whose manifest pid
@@ -82,6 +133,8 @@ export const fixtureHome = Effect.acquireRelease(
         });
         renamed.set(name, to);
       }
+
+      yield* Effect.promise(() => ageTranscripts(path.join(home, ".claude")));
 
       const result: FixtureHome = {
         claude: path.join(home, ".claude"),

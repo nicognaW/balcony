@@ -18,16 +18,30 @@ export const SessionStatus = Schema.Literals(["working", "waiting"]);
 
 export type SessionStatus = typeof SessionStatus.Type;
 
+/** An ISO-8601 time, or null when the session has none yet. */
+const Time = Schema.NullOr(Schema.String);
+
 export const Session = Schema.Struct({
   agent: Agent,
+  /** The branch the session works on; null outside a repository or when detached. */
+  branch: Schema.NullOr(Schema.String),
   /** Unique across agents. */
   id: Schema.String,
   /** ISO-8601 time of the last user or agent message. */
   lastMessageAt: Schema.String,
+  /** When the user last sent the agent a message. */
+  lastUserMessageAt: Time,
   /** Label for the session's working directory, e.g. its folder name. */
   project: Schema.String,
   status: SessionStatus,
   title: Schema.String,
+  /** When the agent last finished a turn. */
+  turnEndedAt: Time,
+  /**
+   * When the agent's latest turn began: the user's message, or whatever else
+   * woke the agent (a finished background task, another session).
+   */
+  turnStartedAt: Time,
 });
 
 export type Session = typeof Session.Type;

@@ -13,8 +13,12 @@ const ContentBlock = Schema.Struct({
  */
 const TranscriptLine = Schema.Struct({
   aiTitle: Schema.optional(Schema.String),
+  attachment: Schema.optional(
+    Schema.Struct({ type: Schema.optional(Schema.String) })
+  ),
   customTitle: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
+  gitBranch: Schema.optional(Schema.String),
   isCompactSummary: Schema.optional(Schema.Boolean),
   isMeta: Schema.optional(Schema.Boolean),
   message: Schema.optional(
@@ -22,6 +26,9 @@ const TranscriptLine = Schema.Struct({
       content: Schema.optional(
         Schema.Union([Schema.String, Schema.Array(ContentBlock)])
       ),
+      /** The API message id, shared by every line of one agent message. */
+      id: Schema.optional(Schema.String),
+      stop_reason: Schema.optional(Schema.NullOr(Schema.String)),
     })
   ),
   origin: Schema.optional(
@@ -49,15 +56,33 @@ export interface TranscriptSummary {
   readonly summary: string | undefined;
   /** The first prompt the user typed. */
   readonly firstPrompt: string | undefined;
+  /** The branch of the last line that names one. */
+  readonly branch: string | undefined;
+  /** When the user last typed a prompt. */
+  readonly lastUserMessageAt: string | undefined;
+  /** When the latest turn began: a prompt, or whatever woke the agent. */
+  readonly turnStartedAt: string | undefined;
+  /** When the agent last ended a turn. */
+  readonly turnEndedAt: string | undefined;
+  /** Whether a turn has begun and not ended. */
+  readonly inTurn: boolean;
+  /** The agent message that ended the last turn; its later lines don't start one. */
+  readonly endingMessageId: string | undefined;
 }
 
 export const emptySummary: TranscriptSummary = {
   aiTitle: undefined,
+  branch: undefined,
   customTitle: undefined,
   cwd: undefined,
+  endingMessageId: undefined,
   firstPrompt: undefined,
+  inTurn: false,
   lastMessageAt: undefined,
+  lastUserMessageAt: undefined,
   summary: undefined,
+  turnEndedAt: undefined,
+  turnStartedAt: undefined,
 };
 
 const MAX_TITLE = 200;
@@ -138,27 +163,134 @@ const newest = (a: string | undefined, b: string | undefined) => {
   return Date.parse(b) > Date.parse(a) ? b : a;
 };
 
+type Turn = Pick<
+  TranscriptSummary,
+  "endingMessageId" | "inTurn" | "turnEndedAt" | "turnStartedAt"
+>;
+
+const startTurn = (summary: TranscriptSummary, at: string): Turn => ({
+  endingMessageId: undefined,
+  inTurn: true,
+  turnEndedAt: summary.turnEndedAt,
+  turnStartedAt: at,
+});
+
+const endTurn = (
+  summary: TranscriptSummary,
+  at: string,
+  messageId: string | undefined
+): Turn => ({
+  endingMessageId: messageId,
+  inTurn: false,
+  turnEndedAt: newest(summary.turnEndedAt, at),
+  turnStartedAt: summary.turnStartedAt,
+});
+
+/** Stop reasons that hand the turn back to the user. */
+const TURN_ENDS = new Set([
+  "end_turn",
+  "max_tokens",
+  "refusal",
+  "stop_sequence",
+]);
+
+/** Harness messages that wake the agent without the user. */
+const WAKE_ORIGINS = new Set(["task-notification", "peer"]);
+
+const isInterrupt = (line: TranscriptLine): boolean =>
+  userText(line)?.trim().startsWith("[Request interrupted") === true;
+
+/** How a user or agent line moves the turn along. */
+const turnAfter = (
+  summary: TranscriptSummary,
+  line: TranscriptLine,
+  at: string
+): Turn => {
+  if (line.type === "user") {
+    if (isInterrupt(line)) {
+      return endTurn(summary, at, undefined);
+    }
+
+    const kind = line.origin?.kind;
+
+    const wakes =
+      promptOf(line) !== undefined ||
+      (kind !== undefined && WAKE_ORIGINS.has(kind));
+
+    return wakes ? startTurn(summary, at) : summary;
+  }
+
+  const messageId = line.message?.id;
+
+  // Every line of one agent message repeats its stop reason, so the lines
+  // after the one that ended a turn don't start another.
+  const sameMessage =
+    messageId !== undefined && messageId === summary.endingMessageId;
+
+  const started =
+    summary.inTurn || sameMessage
+      ? summary
+      : { ...summary, ...startTurn(summary, at) };
+
+  const stopReason = line.message?.stop_reason;
+
+  return stopReason !== undefined &&
+    stopReason !== null &&
+    TURN_ENDS.has(stopReason)
+    ? endTurn(started, at, messageId)
+    : started;
+};
+
+/** Folds a user or agent line, whose cwd and branch are already folded. */
+const foldMessage = (
+  summary: TranscriptSummary,
+  line: TranscriptLine
+): TranscriptSummary => {
+  const prompt = line.type === "user" ? promptOf(line) : undefined;
+
+  const titled: TranscriptSummary = {
+    ...summary,
+    firstPrompt:
+      summary.firstPrompt === undefined && prompt !== undefined
+        ? oneLine(prompt)
+        : summary.firstPrompt,
+  };
+
+  const at = line.timestamp;
+
+  if (at === undefined) {
+    return titled;
+  }
+
+  return {
+    ...titled,
+    ...turnAfter(titled, line, at),
+    lastMessageAt: newest(summary.lastMessageAt, at),
+    lastUserMessageAt: prompt === undefined ? summary.lastUserMessageAt : at,
+  };
+};
+
 const foldTranscriptLine = (
   summary: TranscriptSummary,
   line: TranscriptLine
 ): TranscriptSummary => {
   const cwd = line.cwd ?? summary.cwd;
+  const branch = line.gitBranch ?? summary.branch;
 
   switch (line.type) {
     case "user":
     case "assistant": {
-      const prompt =
-        line.type === "user" && summary.firstPrompt === undefined
-          ? promptOf(line)
-          : undefined;
+      return foldMessage({ ...summary, branch, cwd }, line);
+    }
 
-      return {
-        ...summary,
-        cwd,
-        firstPrompt:
-          prompt === undefined ? summary.firstPrompt : oneLine(prompt),
-        lastMessageAt: newest(summary.lastMessageAt, line.timestamp),
-      };
+    // A message that arrived while the agent was busy (often a finished
+    // background task) and now wakes it.
+    case "attachment": {
+      const at = line.timestamp;
+
+      return line.attachment?.type === "queued_command" && at !== undefined
+        ? { ...summary, ...startTurn(summary, at), branch, cwd }
+        : { ...summary, branch, cwd };
     }
 
     case "custom-title": {
@@ -178,7 +310,7 @@ const foldTranscriptLine = (
     }
 
     default: {
-      return { ...summary, cwd };
+      return { ...summary, branch, cwd };
     }
   }
 };
@@ -200,3 +332,12 @@ export const titleOf = (summary: TranscriptSummary): string =>
   summary.summary ??
   summary.firstPrompt ??
   "Untitled session";
+
+/** Claude records a detached checkout, or no repository, as `HEAD`. */
+const NO_BRANCH = new Set(["", "HEAD"]);
+
+/** The session's branch, or null when it isn't on one. */
+export const branchOf = (summary: TranscriptSummary): string | null =>
+  summary.branch === undefined || NO_BRANCH.has(summary.branch)
+    ? null
+    : summary.branch;

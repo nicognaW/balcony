@@ -24,10 +24,10 @@ export interface ServerOptions {
   readonly hostname: string;
   /** How often agent files are checked for changes. */
   readonly pollInterval?: Duration.Input;
+  /** The current time in epoch ms, for session activity and pairing code expiry. Defaults to `Date.now`. */
+  readonly now?: () => number;
   /** The built web app. Defaults to `apps/web/dist`. */
   readonly webRoot?: string;
-  /** The current time in epoch ms, for short pairing code expiry. Defaults to `Date.now`. */
-  readonly now?: () => number;
 }
 
 export interface RunningServer {
@@ -88,14 +88,16 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   options: ServerOptions
 ) {
   const token = yield* loadOrCreateToken(path.join(options.home, ".balcony"));
+  const now = options.now ?? Date.now;
 
   const claude = yield* makeClaudeSource({
     claudeDir: path.join(options.home, ".claude"),
+    now,
     pollInterval: options.pollInterval ?? "1 second",
   });
 
   const pairingCodes = yield* makePairingCodes({
-    now: options.now ?? Date.now,
+    now,
     token,
   });
 
