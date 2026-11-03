@@ -36,10 +36,21 @@ const LIST_WINDOW_MS = 24 * 60 * 60 * 1000;
 interface ReadState<A> {
   readonly size: number;
   readonly mtime: number;
+  /** The file's inode: a new one means the file was replaced. */
+  readonly ino: bigint | undefined;
   /** Bytes consumed: everything up to the last complete line. */
   readonly offset: number;
+  /** The last bytes consumed, to tell an append from a rewrite. */
+  readonly tail: Uint8Array;
   readonly value: A;
 }
+
+/** How many bytes before the offset are checked to be unchanged. */
+const TAIL_SIZE = 256;
+
+const startsWith = (bytes: Uint8Array, prefix: Uint8Array) =>
+  bytes.length >= prefix.length &&
+  prefix.every((byte, index) => bytes[index] === byte);
 
 const NEWLINE = 0x0a;
 const decoder = new TextDecoder();
@@ -99,49 +110,77 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
         .readDirectory(dir)
         .pipe(Effect.orElseSucceed((): readonly string[] => []));
 
-    /** A file's size and modification time (epoch ms). */
+    /** A file's size, modification time (epoch ms) and inode. */
     const statOf = Effect.fn("statOf")(function* statOf(file: string) {
       const info = yield* fs.stat(file);
 
       return {
+        ino: Option.getOrUndefined(info.ino),
         mtime: Option.getOrElse(info.mtime, () => new Date()).getTime(),
         size: Number(info.size),
       };
     });
 
+    type Stat = Effect.Success<ReturnType<typeof statOf>>;
+
+    /** `length` bytes of a file from `position`. */
+    const readBytes = (file: string, position: number, length: number) =>
+      Effect.scoped(
+        Effect.flatMap(fs.open(file), (handle) =>
+          handle.readAlloc(length, { position: BigInt(position) })
+        )
+      ).pipe(Effect.map(Option.getOrElse(() => new Uint8Array())));
+
     /**
      * Folds what was appended to a transcript since `known` into its value.
-     * A file that shrank was rewritten, so it is folded again from `empty`.
+     * A file that was replaced, shrank, or changed before the offset was
+     * rewritten, so it is folded again from `empty`.
      */
     const readAppended = Effect.fn("readAppended")(function* readAppended<A>(
       file: string,
-      { mtime, size }: { readonly mtime: number; readonly size: number },
+      stat: Stat,
       known: ReadState<A> | undefined,
       empty: A,
       fold: (value: A, bytes: Uint8Array) => A
     ) {
-      if (known !== undefined && known.size === size && known.mtime === mtime) {
+      if (
+        known !== undefined &&
+        known.size === stat.size &&
+        known.mtime === stat.mtime &&
+        known.ino === stat.ino
+      ) {
         return known;
       }
 
-      const base =
-        known === undefined || size < known.offset ? undefined : known;
+      let base =
+        known === undefined ||
+        known.ino !== stat.ino ||
+        stat.size < known.offset
+          ? undefined
+          : known;
 
-      const offset = base?.offset ?? 0;
+      // Read from the start of the tail, to check it is still there.
+      let from = base === undefined ? 0 : base.offset - base.tail.length;
+      let read = yield* readBytes(file, from, stat.size - from);
 
-      const bytes = yield* Effect.scoped(
-        Effect.flatMap(fs.open(file), (handle) =>
-          handle.readAlloc(size - offset, { position: BigInt(offset) })
-        )
-      ).pipe(Effect.map(Option.getOrElse(() => new Uint8Array())));
+      if (base !== undefined && !startsWith(read, base.tail)) {
+        base = undefined;
+        from = 0;
+        read = yield* readBytes(file, 0, stat.size);
+      }
 
+      const bytes = read.subarray(base?.tail.length ?? 0);
       // Keep a half-written last line for the next look.
       const end = bytes.lastIndexOf(NEWLINE) + 1;
+      const offset = (base?.offset ?? 0) + end;
+      const tailFrom = Math.max(from, offset - TAIL_SIZE);
 
       const state: ReadState<A> = {
-        mtime,
-        offset: offset + end,
-        size,
+        ino: stat.ino,
+        mtime: stat.mtime,
+        offset,
+        size: stat.size,
+        tail: read.slice(tailFrom - from, offset - from),
         value: fold(base?.value ?? empty, bytes.subarray(0, end)),
       };
 

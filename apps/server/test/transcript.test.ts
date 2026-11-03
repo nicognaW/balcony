@@ -33,6 +33,10 @@ const promptLine = (sessionId: string, uuid: string, text: string) =>
     uuid,
   });
 
+/** The uuid of a test line. */
+const lineUuid = (n: number) =>
+  `7a000000-0000-4000-8000-${n.toString().padStart(12, "0")}`;
+
 /** The transcript file of a new session in the shop-api project. */
 const newTranscriptFile = Effect.fn("newTranscriptFile")(
   function* newTranscriptFile(sessionId: string) {
@@ -371,6 +375,59 @@ describe("Transcripts over the oRPC WebSocket", () => {
 
         expect(watch).toMatchObject({ code: "NOT_FOUND" });
       })
+    );
+
+    test.effect(
+      "starts again from the newest page when Claude rewrites the file",
+      () =>
+        Effect.gen(function* rewritten() {
+          const { transcript } = yield* client;
+          const sessionId = "7a000000-0000-4000-8000-000000000003";
+          const file = yield* newTranscriptFile(sessionId);
+
+          const lines = (first: number, ...texts: readonly string[]) =>
+            texts
+              .map(
+                (text, index) =>
+                  `${promptLine(sessionId, lineUuid(first + index), text)}\n`
+              )
+              .join("");
+
+          yield* Effect.promise(() =>
+            writeFile(file, lines(1, "One.", "Two."))
+          );
+
+          const updates = yield* Effect.acquireRelease(
+            call(() => transcript.watch({ sessionId })),
+            (iterator) => Effect.promise(async () => await iterator.return?.())
+          );
+
+          const next = call(async () => {
+            const result = await updates.next();
+
+            if (result.done === true) {
+              throw new Error("The watch ended");
+            }
+
+            return result.value;
+          }).pipe(Effect.timeout("3 seconds"));
+
+          expect(yield* next).toMatchObject({ type: "latest" });
+
+          // Longer than before, but not what was there with lines added.
+          yield* Effect.promise(() =>
+            writeFile(file, lines(3, "Uno, rewritten.", "Dos.", "Tres."))
+          );
+
+          const rewrite = yield* next;
+
+          expect(rewrite).toMatchObject({ type: "latest" });
+          expect(rewrite.entries).toMatchObject([
+            { text: "Uno, rewritten." },
+            { text: "Dos." },
+            { text: "Tres." },
+          ]);
+        })
     );
 
     test.effect("rejects Transcript calls without the token", () =>
