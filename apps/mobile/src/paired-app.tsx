@@ -4,9 +4,8 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
-  useRoute,
 } from "@react-navigation/native";
-import type { InitialState, RouteProp } from "@react-navigation/native";
+import type { InitialState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Text, View, useColorScheme } from "react-native";
 
@@ -17,24 +16,24 @@ import { TranscriptScreen } from "./screens/transcript-screen.tsx";
 
 const Stack = createNativeStackNavigator<StackParams>();
 
-/** The session's title over its project. */
-const TranscriptTitle = () => {
-  const { params } = useRoute<RouteProp<StackParams, "Transcript">>();
-
-  return (
-    <View className="min-w-0 flex-1">
-      <Text
-        className="text-foreground text-base font-semibold"
-        numberOfLines={1}
-      >
-        {params.title}
-      </Text>
-      <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-        {params.project}
-      </Text>
-    </View>
-  );
-};
+/**
+ * The session's title over its project. Given them as props: the header
+ * renders outside the screen's route context.
+ */
+const TranscriptTitle = ({
+  params,
+}: {
+  readonly params: StackParams["Transcript"];
+}) => (
+  <View className="min-w-0 flex-1">
+    <Text className="text-foreground text-base font-semibold" numberOfLines={1}>
+      {params.title}
+    </Text>
+    <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+      {params.project}
+    </Text>
+  </View>
+);
 
 export const PairedApp = ({
   initialState,
@@ -56,7 +55,10 @@ export const PairedApp = ({
         <Stack.Screen
           component={TranscriptScreen}
           name="Transcript"
-          options={{ headerTitle: TranscriptTitle }}
+          options={({ route }) => ({
+            // oxlint-disable-next-line react/no-unstable-nested-components -- the header renders outside the route's context, so it gets the params here.
+            headerTitle: () => <TranscriptTitle params={route.params} />,
+          })}
         />
       </Stack.Navigator>
     </NavigationContainer>

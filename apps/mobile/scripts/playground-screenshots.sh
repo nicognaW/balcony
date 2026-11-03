@@ -21,8 +21,11 @@ shot() {
   adb exec-out screencap -p >"$out/$(printf '%02d' "$shot_count")-$1.png"
 }
 
-# Opens a playground link and waits for it to render.
+# Opens a playground link and waits for it to render. Closes any system
+# dialog first ("Balcony keeps stopping" after a crash, the notification
+# shade), so one failure doesn't hide every later screen.
 open_link() {
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
   adb shell am start -W -a android.intent.action.VIEW \
     -d "'balcony://playground?$1'" "$package" >/dev/null
   sleep "${2:-4}"
@@ -45,17 +48,17 @@ for node in re.finditer(r"<node [^>]*>", xml):
 ' "$1"
 }
 
-# The centre of the view labelled $1, waiting up to 30s for it to appear.
+# The centre of the view labelled $1, waiting a few seconds for it to appear.
 # Empty (and a "missing-" screenshot) when it never does.
 find_view() {
   local point=""
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 8); do
     point=$(centre_of "$1" || true)
     if [ -n "$point" ]; then
       echo "$point"
       return 0
     fi
-    sleep 2
+    sleep 1
   done
   echo "No view labelled '$1' on screen" >&2
   shot "missing-$(echo "$1" | tr -c 'a-zA-Z0-9' '-')"

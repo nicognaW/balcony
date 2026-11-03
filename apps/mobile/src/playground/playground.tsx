@@ -28,6 +28,7 @@ import { Icon } from "../components/icon.tsx";
 import { PairedApp } from "../paired-app.tsx";
 import { PairScreen } from "../screens/pair-screen.tsx";
 import type { Pairing } from "../screens/pair-screen.tsx";
+import { PlaygroundErrorBoundary } from "./error-boundary.tsx";
 import type { PlaygroundRun } from "./run.ts";
 
 const SafeArea = withUniwind(SafeAreaView);
@@ -372,20 +373,22 @@ export const PlaygroundApp = ({
     <View className="bg-background flex-1">
       {/* Its own insets: the banner takes the bottom one. */}
       <InsetArea className="flex-1">
-        {pairing === null ? (
-          <QueryClientProvider client={queryClient}>
-            <PairedContext value={paired}>
-              <PairedApp initialState={run.initialState} />
-            </PairedContext>
-          </QueryClientProvider>
-        ) : (
-          <PairScreen
-            lastServer={playground.scenario.server}
-            onPaired={() => setPairingChoice(null)}
-            pairing={fakePairing}
-            refused={pairing.refused}
-          />
-        )}
+        <PlaygroundErrorBoundary>
+          {pairing === null ? (
+            <QueryClientProvider client={queryClient}>
+              <PairedContext value={paired}>
+                <PairedApp initialState={run.initialState} />
+              </PairedContext>
+            </QueryClientProvider>
+          ) : (
+            <PairScreen
+              lastServer={playground.scenario.server}
+              onPaired={() => setPairingChoice(null)}
+              pairing={fakePairing}
+              refused={pairing.refused}
+            />
+          )}
+        </PlaygroundErrorBoundary>
       </InsetArea>
       <Banner
         onControls={() => setPanelChoice(true)}
