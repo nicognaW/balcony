@@ -3,7 +3,7 @@
 import type { TranscriptEntry, TranscriptPage } from "@balcony/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { joinTranscript } from "../src/transcript.ts";
+import { joinTranscript, liveArrivals } from "../src/transcript.ts";
 import type { TranscriptView } from "../src/transcript.ts";
 
 /** Entries numbered `from` up to (not including) `to`. */
@@ -52,5 +52,43 @@ describe("a Transcript with earlier pages", () => {
     const joined = joinTranscript(view(30, 62), [view(20, 40)], "e40");
 
     expect(idsOf(joined)).toEqual(ids(20, 62));
+  });
+});
+
+const shown = (from: number, to: number) => new Set(ids(from, to));
+
+describe("entries that arrive live", () => {
+  const latest = {
+    entries: entries(40, 60),
+    hasEarlier: true,
+    type: "latest",
+  } as const;
+
+  const appended = (from: number, to: number) =>
+    ({ entries: entries(from, to), type: "appended" }) as const;
+
+  it("are the appended ones not on screen yet", () => {
+    expect([
+      ...liveArrivals([latest, appended(60, 62)], shown(40, 60)),
+    ]).toEqual(["e60", "e61"]);
+  });
+
+  it("leave out appended entries already on screen", () => {
+    expect([
+      ...liveArrivals(
+        [latest, appended(60, 61), appended(61, 62)],
+        shown(40, 61)
+      ),
+    ]).toEqual(["e61"]);
+  });
+
+  it("are none on the first render, even for appends held from before", () => {
+    expect(liveArrivals([latest, appended(60, 62)], undefined).size).toBe(0);
+  });
+
+  it("are never in a newest page, sent first or again after a reconnect", () => {
+    const again = { ...latest, entries: entries(45, 65) };
+
+    expect(liveArrivals([latest, again], shown(40, 60)).size).toBe(0);
   });
 });

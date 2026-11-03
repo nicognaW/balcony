@@ -12,6 +12,7 @@ import {
 import { Pressable, Text, View } from "react-native";
 
 import { Icon } from "./icon.tsx";
+import { Spin } from "./motion.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);
@@ -50,7 +51,9 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
     default: {
       return (
         <View className="flex-row items-center gap-1">
-          <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
+          <Spin>
+            <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
+          </Spin>
           <Text className="text-info-foreground text-xs font-medium tabular-nums">
             Working
             {mark.since === null ? null : (

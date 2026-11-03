@@ -129,18 +129,21 @@ const refusalOf = (code: string): PairingRefusal => {
   }
 };
 
+export type PairingOutcome =
+  | { readonly token: string }
+  | { readonly refusal: PairingRefusal };
+
 /**
- * Exchanges the short pairing code for the token, as `exchangePairingCode`,
- * but tells why it didn't pair instead of failing, for the pairing screen.
+ * The token a `pairing.exchange` call gave, or why it didn't pair instead
+ * of failing, for the pairing screen.
  */
-export const redeemPairingCode = async (pairing: {
-  readonly code: string;
-  readonly server: string;
-}): Promise<
-  { readonly token: string } | { readonly refusal: PairingRefusal }
-> => {
+export const pairingOutcome = async (
+  exchange: Promise<{ readonly token: string }>
+): Promise<PairingOutcome> => {
   try {
-    return { token: await exchangePairingCode(pairing) };
+    const { token } = await exchange;
+
+    return { token };
   } catch (error) {
     return {
       refusal:
@@ -148,6 +151,16 @@ export const redeemPairingCode = async (pairing: {
     };
   }
 };
+
+/**
+ * Exchanges the short pairing code for the token, as `exchangePairingCode`,
+ * but tells why it didn't pair instead of failing, for the pairing screen.
+ */
+export const redeemPairingCode = (pairing: {
+  readonly code: string;
+  readonly server: string;
+}): Promise<PairingOutcome> =>
+  pairingOutcome(exchangePairingCode(pairing).then((token) => ({ token })));
 
 /**
  * A socket that never opens. The link waits on it instead of reconnecting,

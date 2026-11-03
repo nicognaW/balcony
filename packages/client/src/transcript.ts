@@ -36,6 +36,40 @@ export const liveTranscript = (
 };
 
 /**
+ * The entries that just arrived live, for the screen to fade in: those
+ * appended since the watch's last `latest` that weren't on screen
+ * (`shown`) at the last render. None on the first render (`shown`
+ * undefined), in a `latest` page, or in pages loaded with "Load earlier":
+ * those appear at once.
+ */
+export const liveArrivals = (
+  updates: readonly TranscriptUpdate[],
+  shown: ReadonlySet<string> | undefined
+): ReadonlySet<string> => {
+  const arrived = new Set<string>();
+
+  if (shown === undefined) {
+    return arrived;
+  }
+
+  for (let index = updates.length - 1; index >= 0; index -= 1) {
+    const update = updates[index];
+
+    if (update === undefined || update.type === "latest") {
+      break;
+    }
+
+    for (const entry of update.entries) {
+      if (!shown.has(entry.id)) {
+        arrived.add(entry.id);
+      }
+    }
+  }
+
+  return arrived;
+};
+
+/**
  * The id to page back from: the oldest entry of the live tail. Earlier pages
  * are loaded with `transcript.read({ before })` from here.
  */

@@ -33,6 +33,7 @@ import type {
 import {
   earliestId,
   joinTranscript,
+  liveArrivals,
   liveTranscript,
   pagingAnchor,
 } from "./transcript.ts";
@@ -225,6 +226,16 @@ export const useMarkViewed = (client: BalconyClient, id: string) => {
   }, [client, id]);
 };
 
+/**
+ * A session from the live session list (shared with the list screen's
+ * query), undefined until the list arrives or when it isn't listed.
+ */
+export const useSession = (orpc: Orpc, id: string): Session | undefined => {
+  const { data } = useQuery(orpc.sessions.watch.liveOptions());
+
+  return data?.sessions.find((session) => session.id === id);
+};
+
 export interface TranscriptState {
   /** Undefined until the newest page arrives. */
   readonly transcript: TranscriptView | undefined;
@@ -234,6 +245,12 @@ export interface TranscriptState {
   /** Loads the page before the oldest entry shown. */
   readonly loadEarlier: () => void;
   readonly loadingEarlier: boolean;
+  /**
+   * The entries that just arrived live, for the screen to fade in. Rows
+   * read it when they mount; the initial page and earlier pages are never
+   * in it.
+   */
+  readonly arrivedLive: ReadonlySet<string>;
 }
 
 /**
@@ -252,7 +269,34 @@ export const useTranscript = (
     })
   );
 
-  const live = liveTranscript(watch.data ?? []);
+  const updates = watch.data;
+  const live = useMemo(() => liveTranscript(updates ?? []), [updates]);
+
+  // The updates now and at the render before they last changed: what was
+  // on screen then is what doesn't fade in now.
+  const [seen, setSeen] = useState<{
+    readonly now: typeof updates;
+    readonly before: typeof updates;
+  }>({ before: undefined, now: undefined });
+
+  if (seen.now !== updates) {
+    setSeen({ before: seen.now, now: updates });
+  }
+
+  const arrivedLive = useMemo(
+    () =>
+      liveArrivals(
+        updates ?? [],
+        seen.before === undefined
+          ? undefined
+          : new Set(
+              seen.before.flatMap((update) =>
+                update.entries.map((entry) => entry.id)
+              )
+            )
+      ),
+    [updates, seen.before]
+  );
 
   // Unset until "Load earlier" is first pressed: the oldest live entry then.
   const [pressedAt, setPressedAt] = useState<string>();
@@ -270,15 +314,21 @@ export const useTranscript = (
     })
   );
 
-  const transcript =
-    live === undefined
-      ? undefined
-      : joinTranscript(live, earlier.data?.pages ?? [], anchor);
+  const pages = earlier.data?.pages;
+
+  const transcript = useMemo(
+    () =>
+      live === undefined
+        ? undefined
+        : joinTranscript(live, pages ?? [], anchor),
+    [live, pages, anchor]
+  );
 
   // Kept retrying (the session may yet appear), so its reason, not error.
   const reason = watch.failureReason;
 
   return {
+    arrivedLive,
     error: watch.error ?? earlier.error,
     loadEarlier: () => {
       if (live === undefined) {
