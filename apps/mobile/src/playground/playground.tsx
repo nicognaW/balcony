@@ -265,38 +265,38 @@ const Banner = ({
   const state = useConnectionState(playground);
 
   return (
-    <SafeArea
-      className="bg-foreground flex-row items-center gap-1 px-3 py-1.5"
-      edges={["bottom", "left", "right"]}
-    >
-      <Pressable
-        accessibilityHint="Opens the playground's controls"
-        accessibilityRole="button"
-        className="min-w-0 flex-1 py-1.5 active:opacity-70"
-        onPress={onControls}
-      >
-        <Text className="text-background text-xs" numberOfLines={1}>
-          <Text className="font-semibold">Playground</Text>
-          {` · ${playground.scenario.label}${STATE_LABELS[state]}`}
-        </Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        className="shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
-        hitSlop={4}
-        onPress={onControls}
-      >
-        <Text className="text-background text-xs font-medium">Controls</Text>
-      </Pressable>
-      <Pressable
-        accessibilityLabel="Exit playground"
-        accessibilityRole="button"
-        className="bg-background shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
-        hitSlop={4}
-        onPress={onExit}
-      >
-        <Text className="text-foreground text-xs font-medium">Exit</Text>
-      </Pressable>
+    // The safe area pads the bottom inset; the row inside pads itself.
+    <SafeArea className="bg-foreground" edges={["bottom", "left", "right"]}>
+      <View className="flex-row items-center gap-1 px-3 py-1.5">
+        <Pressable
+          accessibilityHint="Opens the playground's controls"
+          accessibilityRole="button"
+          className="min-w-0 flex-1 py-1.5 active:opacity-70"
+          onPress={onControls}
+        >
+          <Text className="text-background text-xs" numberOfLines={1}>
+            <Text className="font-semibold">Playground</Text>
+            {` · ${playground.scenario.label}${STATE_LABELS[state]}`}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          className="shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
+          hitSlop={4}
+          onPress={onControls}
+        >
+          <Text className="text-background text-xs font-medium">Controls</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Exit playground"
+          accessibilityRole="button"
+          className="bg-background shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
+          hitSlop={4}
+          onPress={onExit}
+        >
+          <Text className="text-foreground text-xs font-medium">Exit</Text>
+        </Pressable>
+      </View>
     </SafeArea>
   );
 };

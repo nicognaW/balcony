@@ -246,6 +246,24 @@ const settlesSoon = async (promise: Promise<unknown>) => {
   return settled;
 };
 
+describe("a quiet scenario", () => {
+  it("sends nothing after the first list and page until something changes", async () => {
+    const playground = open("edge-cases");
+    const list = await playground.client.sessions.watch();
+
+    const transcript = await playground.client.transcript.watch({
+      sessionId: "edge-kinds",
+    });
+
+    await pull(list);
+    await pull(transcript);
+
+    expect(await settlesSoon(pull(list))).toBe(false);
+    expect(await settlesSoon(pull(transcript))).toBe(false);
+    playground.close();
+  });
+});
+
 describe("connection", () => {
   it("holds calls while connecting, and answers them once connected", async () => {
     const playground = open("connecting");

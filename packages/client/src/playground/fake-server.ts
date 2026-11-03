@@ -99,7 +99,9 @@ export const createPlayground = ({
 }: PlaygroundOptions): Playground => {
   const scenario = scenarioOf(id);
   const data = scenario.data(now());
-  let sessions: readonly Session[] = data.sessions;
+  // Replaced, never changed in place: live calls send it again only once
+  // it is a new list.
+  let list: SessionList = { sessions: data.sessions };
 
   const transcripts = new Map(
     [...data.transcripts].map(([key, entries]) => [key, [...entries]])
@@ -136,9 +138,11 @@ export const createPlayground = ({
   const iso = () => new Date(now()).toISOString();
 
   const update = (sessionId: string, change: (target: Session) => Session) => {
-    sessions = sessions.map((target) =>
-      target.id === sessionId ? change(target) : target
-    );
+    list = {
+      sessions: list.sessions.map((target) =>
+        target.id === sessionId ? change(target) : target
+      ),
+    };
     notify();
   };
 
@@ -274,9 +278,7 @@ export const createPlayground = ({
       watch: os.sessions.watch
         .use(opened)
         .use(accepted)
-        .handler(({ signal }) =>
-          follow((): SessionList => ({ sessions }), signal)
-        ),
+        .handler(({ signal }) => follow(() => list, signal)),
     },
     transcript: {
       read: os.transcript.read
@@ -332,7 +334,7 @@ export const createPlayground = ({
   const client: BalconyClient = createRouterClient(router);
 
   const firstOpen = () =>
-    sessions.find((target) => target.settledAt === null)?.id;
+    list.sessions.find((target) => target.settledAt === null)?.id;
 
   const append = (sessionId = scenario.live?.appendTo ?? firstOpen()) => {
     const entries =
@@ -407,7 +409,7 @@ export const createPlayground = ({
       notify();
     },
     getConnection: () => connection,
-    getSessions: () => sessions,
+    getSessions: () => list.sessions,
     getState: () => linkState(connection),
     scenario,
     setConnection: (state) => {

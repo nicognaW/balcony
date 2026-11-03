@@ -66,13 +66,26 @@ let runs = 0;
  */
 export const startPlayground = (link: PlaygroundLink): PlaygroundRun => {
   const playground = createPlayground({ scenario: link.scenario });
+  const queryClient = createQueryClient();
   runs += 1;
+
+  // Every failed call in logcat (ReactNativeJS), for debugging the screens
+  // from CI: the screens themselves keep retrying quietly.
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type === "updated" && event.action.type === "failed") {
+      // oxlint-disable-next-line no-console -- the playground's debug log.
+      console.warn(
+        `[playground] ${JSON.stringify(event.query.queryKey)} failed:`,
+        event.action.error
+      );
+    }
+  });
 
   return {
     id: runs,
     initialState: navigationFor(link, playground),
     playground,
-    queryClient: createQueryClient(),
+    queryClient,
     screen: link.screen,
   };
 };
