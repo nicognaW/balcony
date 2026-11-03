@@ -1,9 +1,7 @@
 // Adapted from T3 Code's ConnectionStatusDot (MIT, (c) 2026 T3 Tools Inc.).
 import type { ConnectionState } from "@balcony/client";
-import { useConnectionState } from "@balcony/client/react";
+import { useConnectionState, usePaired } from "@balcony/client/react";
 import { Text, View } from "react-native";
-
-import { usePaired } from "../hooks/use-paired.ts";
 
 const LABELS: Record<ConnectionState, string> = {
   connected: "Connected",

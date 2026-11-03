@@ -4,7 +4,7 @@ import { useActionState, useId } from "react";
 
 import type { NotPairedProps } from "@/components/balcony-provider.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { pairWithCode } from "@/lib/connection.ts";
+import { pairByCode } from "@/lib/connection.ts";
 
 const NEW_CODE_HINT =
   "Press Enter in the terminal running balcony for a new one.";
@@ -26,7 +26,7 @@ const CodeForm = ({ onPaired }: Pick<NotPairedProps, "onPaired">) => {
 
   const [error, submit, pending] = useActionState(
     async (_previous: string | null, form: FormData) => {
-      const result = await pairWithCode(String(form.get("code") ?? ""));
+      const result = await pairByCode(String(form.get("code") ?? ""));
 
       if ("refusal" in result) {
         return REFUSAL_MESSAGES[result.refusal];

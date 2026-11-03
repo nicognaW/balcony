@@ -3,6 +3,7 @@
 import type { BalconyClient } from "@balcony/contracts";
 import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
+import type { WebSocketLike } from "@orpc/client/websocket";
 
 export type { BalconyClient } from "@balcony/contracts";
 
@@ -35,6 +36,11 @@ export interface Connection {
   readonly getState: () => ConnectionState;
   /** Calls `listener` on every state change; returns the unsubscribe. */
   readonly subscribe: (listener: () => void) => () => void;
+  /**
+   * Closes the socket for good: it never reconnects, and calls made after
+   * wait until they are aborted.
+   */
+  readonly close: () => void;
 }
 
 export interface ConnectOptions {
@@ -144,6 +150,18 @@ export const redeemPairingCode = async (pairing: {
 };
 
 /**
+ * A socket that never opens. The link waits on it instead of reconnecting,
+ * which is how a closed connection stays closed: RPCLink can't be stopped.
+ */
+const parkedSocket = (): WebSocketLike =>
+  Object.assign(new EventTarget(), {
+    readyState: WebSocket.CONNECTING,
+    send: () => {
+      throw new Error("The connection is closed");
+    },
+  });
+
+/**
  * Opens a client that reconnects by itself whenever the socket drops, and
  * reports the connection state for an indicator. Calls in flight when the
  * socket drops fail; callers retry them (live queries re-subscribe).
@@ -154,7 +172,9 @@ export const connect = ({
   retryDelayMs = 1000,
 }: ConnectOptions): Connection => {
   let state: ConnectionState = "connecting";
-  const listeners = new Set<() => void>();
+  // Replaced, never changed in place, so a listener added while notifying
+  // waits for the next change.
+  let listeners: readonly (() => void)[] = [];
 
   const setState = (next: ConnectionState) => {
     if (state === next) {
@@ -168,9 +188,17 @@ export const connect = ({
     }
   };
 
+  let closed = false;
+  let current: WebSocket | undefined;
+
   const link = new RPCLink({
     connect: () => {
+      if (closed) {
+        return parkedSocket();
+      }
+
       const socket = new WebSocket(rpcUrl(server, token));
+      current = socket;
       socket.binaryType = "arraybuffer";
       socket.addEventListener("open", () => setState("connected"));
       socket.addEventListener("close", () => {
@@ -191,11 +219,17 @@ export const connect = ({
 
   return {
     client: createORPCClient<BalconyClient>(link),
+    close: () => {
+      closed = true;
+      current?.close();
+    },
     getState: () => state,
     subscribe: (listener) => {
-      listeners.add(listener);
+      listeners = [...listeners, listener];
 
-      return () => listeners.delete(listener);
+      return () => {
+        listeners = listeners.filter((known) => known !== listener);
+      };
     },
   };
 };

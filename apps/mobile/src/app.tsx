@@ -1,3 +1,5 @@
+import { PairedContext, connectTo } from "@balcony/client/react";
+import type { Paired, PairedConnection } from "@balcony/client/react";
 // The app: the pairing screen until this phone is paired, then the session
 // list with Transcripts pushed over it (a native stack, as in T3 Code).
 import {
@@ -15,8 +17,7 @@ import { Text, View, useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ConnectionPill } from "./components/connection-pill.tsx";
-import { PairedContext, connectTo, queryClient } from "./lib/connection.ts";
-import type { Paired, PairedConnection } from "./lib/connection.ts";
+import { queryClient } from "./lib/connection.ts";
 import {
   forgetToken,
   loadSavedServer,
@@ -102,6 +103,7 @@ const App = () => {
         : {
             ...paired,
             unpair: (reason) => {
+              paired.connection.close();
               void forgetToken();
               queryClient.clear();
               setRefused(reason === "refused");

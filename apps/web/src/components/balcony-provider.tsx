@@ -1,10 +1,11 @@
 // Shares the paired connection with the app through React context.
+import { PairedContext } from "@balcony/client/react";
+import type { Paired, PairedConnection } from "@balcony/client/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { PairedContext, queryClient } from "@/lib/connection.ts";
-import type { Paired, PairedConnection } from "@/lib/connection.ts";
+import { queryClient } from "@/lib/connection.ts";
 import { forgetToken } from "@/lib/pairing.ts";
 
 export interface NotPairedProps {
@@ -34,11 +35,12 @@ export const BalconyProvider = ({
         ? null
         : {
             ...paired,
-            unpair: () => {
+            unpair: (reason) => {
+              paired.connection.close();
               forgetToken();
               queryClient.clear();
               setPaired(null);
-              setRefused(true);
+              setRefused(reason === "refused");
             },
           },
     [paired]

@@ -3,7 +3,7 @@
 // T3 Tools Inc., apps/mobile/src/features/threads/thread-list-v2-items.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
-import { useNow, useSettle } from "@balcony/client/react";
+import { useNow, usePaired, useSettle } from "@balcony/client/react";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
@@ -11,7 +11,6 @@ import {
 } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 
-import { usePaired } from "../hooks/use-paired.ts";
 import { Icon } from "./icon.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {

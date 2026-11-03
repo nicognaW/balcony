@@ -36,10 +36,21 @@ const LIST_WINDOW_MS = 24 * 60 * 60 * 1000;
 interface ReadState<A> {
   readonly size: number;
   readonly mtime: number;
+  /** The file's inode: a new one means the file was replaced. */
+  readonly ino: bigint | undefined;
   /** Bytes consumed: everything up to the last complete line. */
   readonly offset: number;
+  /** The last bytes consumed, to tell an append from a rewrite. */
+  readonly tail: Uint8Array;
   readonly value: A;
 }
+
+/** How many bytes before the offset are checked to be unchanged. */
+const TAIL_SIZE = 256;
+
+const startsWith = (bytes: Uint8Array, prefix: Uint8Array) =>
+  bytes.length >= prefix.length &&
+  prefix.every((byte, index) => bytes[index] === byte);
 
 const NEWLINE = 0x0a;
 const decoder = new TextDecoder();
@@ -65,22 +76,25 @@ interface Entries {
 const noEntries: Entries = { ids: new Set(), list: [] };
 
 const parseEntries = (known: Entries, bytes: Uint8Array): Entries => {
-  const added = linesOf(bytes)
-    .flatMap(entriesOfLine)
-    .filter((entry) => !known.ids.has(entry.id));
+  let ids: Set<string> | undefined;
+  const added: TranscriptEntry[] = [];
 
-  if (added.length === 0) {
-    return known;
+  for (const entry of linesOf(bytes).flatMap(entriesOfLine)) {
+    if (!(ids ?? known.ids).has(entry.id)) {
+      ids ??= new Set(known.ids);
+      ids.add(entry.id);
+      added.push(entry);
+    }
   }
 
-  const ids = new Set(known.ids);
-
-  for (const { id } of added) {
-    ids.add(id);
-  }
-
-  return { ids, list: [...known.list, ...added] };
+  return ids === undefined ? known : { ids, list: [...known.list, ...added] };
 };
+
+/**
+ * Transcripts older than the window are looked at again only every this many
+ * scans: they rarely change, and there can be thousands.
+ */
+const OLD_FILE_RECHECK_SCANS = 10;
 
 /** How many transcripts keep their entries in memory for paging and watching. */
 const ENTRY_CACHE_SIZE = 8;
@@ -96,55 +110,87 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const sessionsDir = path.join(claudeDir, "sessions");
     const transcripts = new Map<string, ReadState<TranscriptSummary>>();
     const entryCache = new Map<string, ReadState<Entries>>();
+    /** Transcript files by session id, as the last scan listed them. */
+    let filesById = new Map<string, readonly string[]>();
+    /** Files last seen older than the window, and how many scans ago. */
+    const oldFiles = new Map<string, number>();
 
     const listDir = (dir: string) =>
       fs
         .readDirectory(dir)
         .pipe(Effect.orElseSucceed((): readonly string[] => []));
 
-    /** A file's size and modification time (epoch ms). */
+    /** A file's size, modification time (epoch ms) and inode. */
     const statOf = Effect.fn("statOf")(function* statOf(file: string) {
       const info = yield* fs.stat(file);
 
       return {
+        ino: Option.getOrUndefined(info.ino),
         mtime: Option.getOrElse(info.mtime, () => new Date()).getTime(),
         size: Number(info.size),
       };
     });
 
+    type Stat = Effect.Success<ReturnType<typeof statOf>>;
+
+    /** `length` bytes of a file from `position`. */
+    const readBytes = (file: string, position: number, length: number) =>
+      Effect.scoped(
+        Effect.flatMap(fs.open(file), (handle) =>
+          handle.readAlloc(length, { position: BigInt(position) })
+        )
+      ).pipe(Effect.map(Option.getOrElse(() => new Uint8Array())));
+
     /**
      * Folds what was appended to a transcript since `known` into its value.
-     * A file that shrank was rewritten, so it is folded again from `empty`.
+     * A file that was replaced, shrank, or changed before the offset was
+     * rewritten, so it is folded again from `empty`.
      */
     const readAppended = Effect.fn("readAppended")(function* readAppended<A>(
       file: string,
-      { mtime, size }: { readonly mtime: number; readonly size: number },
+      stat: Stat,
       known: ReadState<A> | undefined,
       empty: A,
       fold: (value: A, bytes: Uint8Array) => A
     ) {
-      if (known !== undefined && known.size === size && known.mtime === mtime) {
+      if (
+        known !== undefined &&
+        known.size === stat.size &&
+        known.mtime === stat.mtime &&
+        known.ino === stat.ino
+      ) {
         return known;
       }
 
-      const base =
-        known === undefined || size < known.offset ? undefined : known;
+      let base =
+        known === undefined ||
+        known.ino !== stat.ino ||
+        stat.size < known.offset
+          ? undefined
+          : known;
 
-      const offset = base?.offset ?? 0;
+      // Read from the start of the tail, to check it is still there.
+      let from = base === undefined ? 0 : base.offset - base.tail.length;
+      let read = yield* readBytes(file, from, stat.size - from);
 
-      const bytes = yield* Effect.scoped(
-        Effect.flatMap(fs.open(file), (handle) =>
-          handle.readAlloc(size - offset, { position: BigInt(offset) })
-        )
-      ).pipe(Effect.map(Option.getOrElse(() => new Uint8Array())));
+      if (base !== undefined && !startsWith(read, base.tail)) {
+        base = undefined;
+        from = 0;
+        read = yield* readBytes(file, 0, stat.size);
+      }
 
+      const bytes = read.subarray(base?.tail.length ?? 0);
       // Keep a half-written last line for the next look.
       const end = bytes.lastIndexOf(NEWLINE) + 1;
+      const offset = (base?.offset ?? 0) + end;
+      const tailFrom = Math.max(from, offset - TAIL_SIZE);
 
       const state: ReadState<A> = {
-        mtime,
-        offset: offset + end,
-        size,
+        ino: stat.ino,
+        mtime: stat.mtime,
+        offset,
+        size: stat.size,
+        tail: read.slice(tailFrom - from, offset - from),
         value: fold(base?.value ?? empty, bytes.subarray(0, end)),
       };
 
@@ -207,9 +253,25 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       return state.value.list;
     });
 
+    /** Whether to look at a file this scan: old ones only now and then. */
+    const dueForLook = (file: string) => {
+      const skipped = oldFiles.get(file);
+
+      if (skipped === undefined || skipped + 1 >= OLD_FILE_RECHECK_SCANS) {
+        oldFiles.delete(file);
+
+        return true;
+      }
+
+      oldFiles.set(file, skipped + 1);
+
+      return false;
+    };
+
     const readTranscripts = Effect.fn("readTranscripts")(
       function* readTranscripts(cutoff: number) {
         const seen = new Set<string>();
+        const byId = new Map<string, string[]>();
 
         const found: {
           id: string;
@@ -225,8 +287,14 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
               continue;
             }
 
+            const id = name.slice(0, -6);
             const file = path.join(projectsDir, projectDir, name);
             seen.add(file);
+            byId.set(id, [...(byId.get(id) ?? []), file]);
+
+            if (!dueForLook(file)) {
+              continue;
+            }
 
             const state = yield* readTranscript(file, cutoff).pipe(
               Effect.orElseSucceed(() =>
@@ -235,11 +303,9 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
             );
 
             if (Option.isSome(state)) {
-              found.push({
-                id: name.slice(0, -6),
-                projectDir,
-                summary: state.value.value,
-              });
+              found.push({ id, projectDir, summary: state.value.value });
+            } else {
+              oldFiles.set(file, 0);
             }
           }
         }
@@ -250,46 +316,74 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           }
         }
 
+        for (const file of oldFiles.keys()) {
+          if (!seen.has(file)) {
+            oldFiles.delete(file);
+          }
+        }
+
+        filesById = byId;
+
         return found;
       }
     );
 
-    /**
-     * The transcript file of a session: of several copies (see `scan`), the
-     * one with the newest message.
-     */
-    const transcriptFileOf = Effect.fn("transcriptFileOf")(
-      function* transcriptFileOf(sessionId: string) {
+    /** Every copy of a session's transcript, looking in each project. */
+    const findTranscriptFiles = Effect.fn("findTranscriptFiles")(
+      function* findTranscriptFiles(sessionId: string) {
         const fileName = `${sessionId}.jsonl`;
-        let best: { file: string; lastMessageAt: number } | undefined;
+        const files: string[] = [];
 
         for (const projectDir of yield* listDir(projectsDir)) {
           const names = yield* listDir(path.join(projectsDir, projectDir));
 
           // Only names read from disk become paths, never the caller's id.
           for (const name of names.filter((found) => found === fileName)) {
-            const file = path.join(projectsDir, projectDir, name);
-
-            // Any age: an old session opened from a link still has a Transcript.
-            const state = yield* readTranscript(file, 0).pipe(
-              Effect.orElseSucceed(() =>
-                Option.none<ReadState<TranscriptSummary>>()
-              )
-            );
-
-            const at = Option.isSome(state)
-              ? Date.parse(state.value.value.lastMessageAt ?? "")
-              : Number.NaN;
-
-            const lastMessageAt = Number.isNaN(at) ? 0 : at;
-
-            if (best === undefined || lastMessageAt > best.lastMessageAt) {
-              best = { file, lastMessageAt };
-            }
+            files.push(path.join(projectsDir, projectDir, name));
           }
         }
 
-        return Option.map(Option.fromUndefinedOr(best), ({ file }) => file);
+        return files;
+      }
+    );
+
+    /** Of several copies (see `scan`), the readable one with the newest message. */
+    const newestOf = Effect.fn("newestOf")(function* newestOf(
+      files: readonly string[]
+    ) {
+      let best: { file: string; lastMessageAt: number } | undefined;
+
+      for (const file of files) {
+        // Any age: an old session opened from a link still has a Transcript.
+        const state = yield* Effect.option(readTranscript(file, 0));
+        const summary = Option.flatten(state);
+
+        if (Option.isNone(summary)) {
+          continue;
+        }
+
+        const at = Date.parse(summary.value.value.lastMessageAt ?? "");
+        const lastMessageAt = Number.isNaN(at) ? 0 : at;
+
+        if (best === undefined || lastMessageAt > best.lastMessageAt) {
+          best = { file, lastMessageAt };
+        }
+      }
+
+      return Option.map(Option.fromUndefinedOr(best), ({ file }) => file);
+    });
+
+    /**
+     * The transcript file of a session, from the last scan's listing when it
+     * has a readable copy, otherwise looked for afresh.
+     */
+    const transcriptFileOf = Effect.fn("transcriptFileOf")(
+      function* transcriptFileOf(sessionId: string) {
+        const listed = yield* newestOf(filesById.get(sessionId) ?? []);
+
+        return Option.isSome(listed)
+          ? listed
+          : yield* newestOf(yield* findTranscriptFiles(sessionId));
       }
     );
 
@@ -298,15 +392,26 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     ) {
       const file = yield* transcriptFileOf(sessionId);
 
-      return file.pipe(
-        Option.map((found) =>
-          Stream.fromEffectSchedule(
-            // An unreadable file (e.g. deleted since) reads as unchanged.
-            Effect.option(readEntries(found)),
-            Schedule.spaced(pollInterval)
-          ).pipe(
-            Stream.filter(Option.isSome),
-            Stream.map((entries) => entries.value),
+      if (Option.isNone(file)) {
+        return Option.none<Stream.Stream<readonly TranscriptEntry[]>>();
+      }
+
+      // A file that can't be read at all is no Transcript.
+      const first = yield* Effect.option(readEntries(file.value));
+
+      return first.pipe(
+        Option.map((entries) =>
+          Stream.succeed(entries).pipe(
+            Stream.concat(
+              Stream.fromEffectSchedule(
+                // Unreadable since (e.g. deleted): unchanged.
+                Effect.option(readEntries(file.value)),
+                Schedule.spaced(pollInterval)
+              ).pipe(
+                Stream.filter(Option.isSome),
+                Stream.map((read) => read.value)
+              )
+            ),
             Stream.changesWith((a, b) => a === b)
           )
         )

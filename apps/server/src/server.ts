@@ -46,11 +46,23 @@ const defaultWebRoot = fileURLToPath(
   new URL("../../web/dist", import.meta.url)
 );
 
+/** The path decoded, or null when it isn't valid percent-encoding. */
+const decodePath = (pathname: string) => {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+};
+
 /** The web app file for a request path, with index.html for app routes. */
 const staticFile = async (webRoot: string, pathname: string) => {
-  const file = path.normalize(path.join(webRoot, decodeURIComponent(pathname)));
+  const decoded = decodePath(pathname);
 
-  if (file.startsWith(webRoot + path.sep)) {
+  const file =
+    decoded === null ? undefined : path.normalize(path.join(webRoot, decoded));
+
+  if (file?.startsWith(webRoot + path.sep) === true) {
     const found = Bun.file(file);
 
     if (await found.exists()) {
@@ -81,6 +93,25 @@ const serveWebApp = async (webRoot: string, pathname: string) => {
         : "no-cache",
     },
   });
+};
+
+/**
+ * Whether a WebSocket upgrade may come from where it says: the app's own
+ * pages (same origin as the Host it asked for) or an app that sends no
+ * Origin, never a page on another site.
+ */
+const allowedOrigin = (request: Request) => {
+  const origin = request.headers.get("origin");
+
+  if (origin === null) {
+    return true;
+  }
+
+  try {
+    return new URL(origin).host === request.headers.get("host");
+  } catch {
+    return false;
+  }
 };
 
 interface SocketData {
@@ -130,6 +161,12 @@ export const startServer = Effect.fn("startServer")(function* startServer(
           const url = new URL(request.url);
 
           if (url.pathname === "/rpc") {
+            // Pairing is open to anyone who connects; pages on other sites
+            // must not be able to guess codes or lock them.
+            if (!allowedOrigin(request)) {
+              return new Response("Forbidden origin", { status: 403 });
+            }
+
             // Browsers can't set WebSocket headers, so the token travels as a
             // query parameter. The `authed` middleware checks it on each call.
             const upgraded = bun.upgrade(request, {

@@ -1,11 +1,128 @@
 // React hooks over the shared client, used alike by the web app and the
 // Android app. React and TanStack Query are peers: each app brings its own.
 import type { BalconyClient, Session } from "@balcony/contracts";
-import { QueryClient, useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { ORPCError } from "@orpc/client";
+import { createTanstackQueryUtils } from "@orpc/tanstack-query";
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
+import {
+  createContext,
+  use,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-import { createSessionList, isUnauthorized } from "./index.ts";
-import type { Connection, ConnectionState, SessionListView } from "./index.ts";
+import {
+  connect,
+  createSessionList,
+  isUnauthorized,
+  redeemPairingCode,
+} from "./index.ts";
+import type {
+  Connection,
+  ConnectionState,
+  PairingRefusal,
+  SessionListView,
+} from "./index.ts";
+import {
+  earliestId,
+  joinTranscript,
+  liveTranscript,
+  pagingAnchor,
+} from "./transcript.ts";
+import type { TranscriptView } from "./transcript.ts";
+
+/** TanStack Query options for every procedure of a connection's client. */
+export const orpcOf = (connection: Connection) =>
+  createTanstackQueryUtils(connection.client);
+
+export type Orpc = ReturnType<typeof orpcOf>;
+
+/** A connection to the paired server, as the app shares it. */
+export interface PairedConnection {
+  /** The server's origin, e.g. `http://192.168.1.20:7766`. */
+  readonly server: string;
+  readonly connection: Connection;
+  readonly orpc: Orpc;
+}
+
+/** Connects to a server with its pairing token. */
+export const connectTo = ({
+  server,
+  token,
+}: {
+  readonly server: string;
+  readonly token: string;
+}): PairedConnection => {
+  const connection = connect({ server, token });
+
+  return { connection, orpc: orpcOf(connection), server };
+};
+
+/**
+ * Exchanges the short code `balcony` shows for the token, has `save` keep
+ * it, and connects. Fails only when `save` does.
+ */
+export const pairWithCode = async ({
+  code,
+  save,
+  server,
+}: {
+  readonly code: string;
+  readonly save: (token: string) => Promise<void> | void;
+  readonly server: string;
+}): Promise<
+  { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
+> => {
+  const result = await redeemPairingCode({ code, server });
+
+  if ("refusal" in result) {
+    return result;
+  }
+
+  await save(result.token);
+
+  return { paired: connectTo({ server, token: result.token }) };
+};
+
+export interface Paired extends PairedConnection {
+  /**
+   * Closes the connection, forgets the token and returns to pairing:
+   * `refused` when the server no longer accepts it, `asked` when the user
+   * chose to pair again.
+   */
+  readonly unpair: (reason: "refused" | "asked") => void;
+}
+
+/** The paired connection, null while the app isn't paired. */
+export const PairedContext = createContext<Paired | null>(null);
+
+export const usePaired = (): Paired => {
+  const paired = use(PairedContext);
+
+  if (paired === null) {
+    throw new Error("usePaired needs a paired PairedContext");
+  }
+
+  return paired;
+};
+
+/** Unpairs when a call's `error` says the server refused the token. */
+export const useUnpairWhenRefused = (error: Error | null) => {
+  const { unpair } = usePaired();
+
+  useEffect(() => {
+    if (isUnauthorized(error)) {
+      unpair("refused");
+    }
+  }, [error, unpair]);
+};
 
 /** The query client for live data, the same in both apps. */
 export const createQueryClient = (): QueryClient =>
@@ -106,4 +223,76 @@ export const useMarkViewed = (client: BalconyClient, id: string) => {
 
     return mark;
   }, [client, id]);
+};
+
+export interface TranscriptState {
+  /** Undefined until the newest page arrives. */
+  readonly transcript: TranscriptView | undefined;
+  /** The server has no Transcript for the session (it keeps retrying). */
+  readonly notFound: boolean;
+  readonly error: Error | null;
+  /** Loads the page before the oldest entry shown. */
+  readonly loadEarlier: () => void;
+  readonly loadingEarlier: boolean;
+}
+
+/**
+ * A session's Transcript: the newest page, followed live, and the pages
+ * loaded with "Load earlier" before it.
+ */
+export const useTranscript = (
+  orpc: Orpc,
+  sessionId: string
+): TranscriptState => {
+  const watch = useQuery(
+    orpc.transcript.watch.streamedOptions({
+      input: { sessionId },
+      // A resubscribe (after a reconnect) starts again from the newest page.
+      queryFnOptions: { refetchMode: "reset" },
+    })
+  );
+
+  const live = liveTranscript(watch.data ?? []);
+
+  // Unset until "Load earlier" is first pressed: the oldest live entry then.
+  const [pressedAt, setPressedAt] = useState<string>();
+  // Unset again when a new live tail no longer reaches it.
+  const anchor = live === undefined ? undefined : pagingAnchor(live, pressedAt);
+
+  const earlier = useInfiniteQuery(
+    orpc.transcript.read.infiniteOptions({
+      enabled: anchor !== undefined,
+      getNextPageParam: (page) =>
+        page.hasEarlier ? page.entries[0]?.id : undefined,
+      initialPageParam: anchor ?? "",
+      input: (before: string) => ({ before, sessionId }),
+      staleTime: Number.POSITIVE_INFINITY,
+    })
+  );
+
+  const transcript =
+    live === undefined
+      ? undefined
+      : joinTranscript(live, earlier.data?.pages ?? [], anchor);
+
+  // Kept retrying (the session may yet appear), so its reason, not error.
+  const reason = watch.failureReason;
+
+  return {
+    error: watch.error ?? earlier.error,
+    loadEarlier: () => {
+      if (live === undefined) {
+        return;
+      }
+
+      if (anchor === undefined) {
+        setPressedAt(earliestId(live));
+      } else {
+        void earlier.fetchNextPage();
+      }
+    },
+    loadingEarlier: earlier.isFetching,
+    notFound: reason instanceof ORPCError && reason.code === "NOT_FOUND",
+    transcript,
+  };
 };
