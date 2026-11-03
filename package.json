@@ -9,7 +9,7 @@
   "scripts": {
     "check": "uncheck",
     "fix": "uncheck --fix",
-    "prepare": "uncheck prepare --pre-commit",
+    "prepare": "uncheck prepare --pre-commit || exit 0",
     "doctor": "REACT_DOCTOR_NO_TELEMETRY=1 react-doctor --no-telemetry"
   },
   "devDependencies": {
