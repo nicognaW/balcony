@@ -2,7 +2,6 @@
 // @balcony/client/playground, with no Balcony server. A banner at the bottom
 // names the scenario and leads to the controls and out. The app's own
 // pairing and query cache are left as they were.
-import type { ConnectionState } from "@balcony/client";
 import { pairingOutcome } from "@balcony/client";
 import { scenarios } from "@balcony/client/playground";
 import type {
@@ -11,11 +10,7 @@ import type {
   Scenario,
   ScenarioId,
 } from "@balcony/client/playground";
-import {
-  PairedContext,
-  orpcOf,
-  useConnectionState,
-} from "@balcony/client/react";
+import { PairedContext, orpcOf } from "@balcony/client/react";
 import type { Paired, PairedConnection } from "@balcony/client/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { CheckIcon, XIcon } from "lucide-react-native";
@@ -90,7 +85,7 @@ const ActionButton = ({
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ disabled }}
-    className="border-border bg-card min-h-10 flex-1 items-center justify-center rounded-lg border px-3 active:opacity-70 disabled:opacity-40"
+    className="border-border bg-card min-h-10 flex-1 items-center justify-center rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-40"
     disabled={disabled}
     onPress={onPress}
   >
@@ -247,12 +242,6 @@ const Panel = ({
   );
 };
 
-const STATE_LABELS: Record<ConnectionState, string> = {
-  connected: "",
-  connecting: " · connecting",
-  reconnecting: " · reconnecting",
-};
-
 /** Always on screen while in the playground: what it is, and the way out. */
 const Banner = ({
   onControls,
@@ -262,45 +251,41 @@ const Banner = ({
   readonly onControls: () => void;
   readonly onExit: () => void;
   readonly playground: Playground;
-}) => {
-  const state = useConnectionState(playground);
-
-  return (
-    // The safe area pads the bottom inset; the row inside pads itself.
-    <SafeArea className="bg-foreground" edges={["bottom", "left", "right"]}>
-      <View className="flex-row items-center gap-1 px-3 py-1.5">
-        <Pressable
-          accessibilityHint="Opens the playground's controls"
-          accessibilityRole="button"
-          className="min-w-0 flex-1 py-1.5 active:opacity-70"
-          onPress={onControls}
-        >
-          <Text className="text-background text-xs" numberOfLines={1}>
-            <Text className="font-semibold">Playground</Text>
-            {` · ${playground.scenario.label}${STATE_LABELS[state]}`}
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          className="shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
-          hitSlop={4}
-          onPress={onControls}
-        >
-          <Text className="text-background text-xs font-medium">Controls</Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Exit playground"
-          accessibilityRole="button"
-          className="bg-background shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
-          hitSlop={4}
-          onPress={onExit}
-        >
-          <Text className="text-foreground text-xs font-medium">Exit</Text>
-        </Pressable>
-      </View>
-    </SafeArea>
-  );
-};
+}) => (
+  // The safe area pads the bottom inset; the row inside pads itself.
+  <SafeArea className="bg-foreground" edges={["bottom", "left", "right"]}>
+    <View className="flex-row items-center gap-1 px-3 py-1.5">
+      <Pressable
+        accessibilityHint="Opens the playground's controls"
+        accessibilityRole="button"
+        className="min-w-0 flex-1 py-1.5 active:opacity-70"
+        onPress={onControls}
+      >
+        <Text className="text-background text-xs" numberOfLines={1}>
+          <Text className="font-semibold">Playground</Text>
+          {` · ${playground.scenario.label}`}
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        className="shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
+        hitSlop={4}
+        onPress={onControls}
+      >
+        <Text className="text-background text-xs font-medium">Controls</Text>
+      </Pressable>
+      <Pressable
+        accessibilityLabel="Exit playground"
+        accessibilityRole="button"
+        className="bg-background shrink-0 rounded-md px-2.5 py-1.5 active:opacity-70"
+        hitSlop={4}
+        onPress={onExit}
+      >
+        <Text className="text-foreground text-xs font-medium">Exit</Text>
+      </Pressable>
+    </View>
+  </SafeArea>
+);
 
 /** The pairing screen, when shown: null shows the paired screens. */
 type PairingShown = { readonly refused: boolean } | null;

@@ -106,7 +106,7 @@ pass() {
   shot "pair-real$suffix"
   long_press "Pair with your Mac"
   shot "long-press-busy-day$suffix"
-  tap "Exit playground"
+  tap "Exit"
   shot "after-exit$suffix"
 
   open_link "scenario=busy-day&screen=sessions"

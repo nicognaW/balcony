@@ -414,4 +414,13 @@ describe("row titles", () => {
       "Untitled session",
     ]);
   });
+
+  it("puts a title written over several lines on one", () => {
+    const { view } = createSessionList().update(
+      [session("a", { title: "Line one\nLine two  \t and three " })],
+      at("12:00:00")
+    );
+
+    expect(view.main[0]?.title).toBe("Line one Line two and three");
+  });
 });

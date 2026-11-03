@@ -47,9 +47,15 @@ export interface SessionListUpdate {
   readonly nextChangeAt: number | null;
 }
 
-/** A session's title to show: `Untitled session` when it has none. */
-export const sessionTitle = (session: Pick<Session, "title">): string =>
-  session.title.trim() === "" ? "Untitled session" : session.title;
+/**
+ * A session's title to show, on one line (line breaks and runs of spaces
+ * become one space): `Untitled session` when it has none.
+ */
+export const sessionTitle = (session: Pick<Session, "title">): string => {
+  const title = session.title.replaceAll(/\s+/gu, " ").trim();
+
+  return title === "" ? "Untitled session" : title;
+};
 
 /**
  * How long a session that stopped stays in Working. A turn can end moments
