@@ -1,9 +1,11 @@
 // The short pairing code: typed on the phone when the camera can't scan the
 // QR code, and exchanged for the token. One code is live at a time; see
 // docs/adr/0002-short-pairing-code-in-the-terminal.md.
-import { randomInt, timingSafeEqual } from "node:crypto";
+import { randomInt } from "node:crypto";
 
 import { Context, Effect, Ref } from "effect";
+
+import { sameSecret } from "./same-secret.ts";
 
 export interface PairingCode {
   /** Six digits. */
@@ -63,13 +65,6 @@ const refused = (
 
 const newCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
-const sameCode = (given: string, expected: string) => {
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
 export const makePairingCodes = Effect.fn("makePairingCodes")(
   function* makePairingCodes(options: PairingCodeOptions) {
     const live = yield* Ref.make<State>(null);
@@ -87,7 +82,7 @@ export const makePairingCodes = Effect.fn("makePairingCodes")(
         return [refused("expired"), null];
       }
 
-      if (sameCode(given, current.code)) {
+      if (sameSecret(given, current.code)) {
         return [null, null];
       }
 

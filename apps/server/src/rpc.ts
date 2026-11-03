@@ -1,13 +1,12 @@
 // The oRPC router: the contract implemented with Effect handlers.
 import "@orpc/effect/extensions/effect";
-import { timingSafeEqual } from "node:crypto";
-
 import { contract } from "@balcony/contracts";
 import type { WithEffectContext } from "@orpc/effect";
 import { implement, ORPCError } from "@orpc/server";
 import { Effect, Option, Stream } from "effect";
 
 import { PairingCodes } from "./pairing-code.ts";
+import { sameSecret } from "./same-secret.ts";
 import { SessionMarks } from "./session-marks.ts";
 import { Sessions } from "./sessions.ts";
 import { Transcripts } from "./transcripts.ts";
@@ -36,19 +35,8 @@ const streamToIterator = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
 
 const os = implement(contract).$context<RpcContext>();
 
-const sameToken = (given: string | null, expected: string) => {
-  if (given === null) {
-    return false;
-  }
-
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
 const authed = os.middleware(({ context, next }) => {
-  if (!sameToken(context.token, context.serverToken)) {
+  if (!sameSecret(context.token, context.serverToken)) {
     throw new ORPCError("UNAUTHORIZED");
   }
 
