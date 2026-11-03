@@ -3,13 +3,21 @@
 // `~/.claude/sessions/<pid>.json`. Nothing is ever written there.
 import path from "node:path";
 
+import type { TranscriptEntry } from "@balcony/contracts";
 import type { Duration } from "effect";
 import { Effect, FileSystem, Option, Schedule, Stream } from "effect";
 
 import type { AgentSource, SourceSession } from "../agent-source.ts";
+import { entriesOfLine } from "./entries.ts";
 import { parseStatusFile, statusFilePid } from "./status-files.ts";
 import type { LiveStatus } from "./status-files.ts";
-import { branchOf, emptySummary, foldLine, titleOf } from "./transcript.ts";
+import {
+  branchOf,
+  emptySummary,
+  foldLine,
+  statusOf,
+  titleOf,
+} from "./transcript.ts";
 import type { TranscriptSummary } from "./transcript.ts";
 
 export interface ClaudeSourceOptions {
@@ -25,26 +33,57 @@ export interface ClaudeSourceOptions {
 const LIST_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** How far into a transcript we've read, and what it said so far. */
-interface TranscriptState {
+interface ReadState<A> {
   readonly size: number;
   readonly mtime: number;
   /** Bytes consumed: everything up to the last complete line. */
   readonly offset: number;
-  readonly summary: TranscriptSummary;
+  readonly value: A;
 }
 
 const NEWLINE = 0x0a;
 const decoder = new TextDecoder();
 
-const parseLines = (bytes: Uint8Array, summary: TranscriptSummary) => {
+const linesOf = (bytes: Uint8Array) => decoder.decode(bytes).split("\n");
+
+const parseLines = (summary: TranscriptSummary, bytes: Uint8Array) => {
   let folded = summary;
 
-  for (const text of decoder.decode(bytes).split("\n")) {
+  for (const text of linesOf(bytes)) {
     folded = foldLine(folded, text);
   }
 
   return folded;
 };
+
+/** A transcript's entries, and their ids to drop lines written twice. */
+interface Entries {
+  readonly list: readonly TranscriptEntry[];
+  readonly ids: ReadonlySet<string>;
+}
+
+const noEntries: Entries = { ids: new Set(), list: [] };
+
+const parseEntries = (known: Entries, bytes: Uint8Array): Entries => {
+  const added = linesOf(bytes)
+    .flatMap(entriesOfLine)
+    .filter((entry) => !known.ids.has(entry.id));
+
+  if (added.length === 0) {
+    return known;
+  }
+
+  const ids = new Set(known.ids);
+
+  for (const { id } of added) {
+    ids.add(id);
+  }
+
+  return { ids, list: [...known.list, ...added] };
+};
+
+/** How many transcripts keep their entries in memory for paging and watching. */
+const ENTRY_CACHE_SIZE = 8;
 
 export const makeClaudeSource = Effect.fn("makeClaudeSource")(
   function* makeClaudeSource({
@@ -55,39 +94,39 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const fs = yield* FileSystem.FileSystem;
     const projectsDir = path.join(claudeDir, "projects");
     const sessionsDir = path.join(claudeDir, "sessions");
-    const transcripts = new Map<string, TranscriptState>();
+    const transcripts = new Map<string, ReadState<TranscriptSummary>>();
+    const entryCache = new Map<string, ReadState<Entries>>();
 
     const listDir = (dir: string) =>
       fs
         .readDirectory(dir)
         .pipe(Effect.orElseSucceed((): readonly string[] => []));
 
-    /**
-     * Reads what was appended to a transcript since the last look, or nothing
-     * when the file hasn't changed since `cutoff`: its last message is
-     * older still, so it isn't listed and needn't be read.
-     */
-    const readTranscript = Effect.fn("readTranscript")(function* readTranscript(
-      file: string,
-      cutoff: number
-    ) {
+    /** A file's size and modification time (epoch ms). */
+    const statOf = Effect.fn("statOf")(function* statOf(file: string) {
       const info = yield* fs.stat(file);
-      const size = Number(info.size);
-      const mtime = Option.getOrElse(info.mtime, () => new Date()).getTime();
 
-      if (mtime < cutoff) {
-        transcripts.delete(file);
+      return {
+        mtime: Option.getOrElse(info.mtime, () => new Date()).getTime(),
+        size: Number(info.size),
+      };
+    });
 
-        return Option.none<TranscriptState>();
-      }
-
-      const known = transcripts.get(file);
-
+    /**
+     * Folds what was appended to a transcript since `known` into its value.
+     * A file that shrank was rewritten, so it is folded again from `empty`.
+     */
+    const readAppended = Effect.fn("readAppended")(function* readAppended<A>(
+      file: string,
+      { mtime, size }: { readonly mtime: number; readonly size: number },
+      known: ReadState<A> | undefined,
+      empty: A,
+      fold: (value: A, bytes: Uint8Array) => A
+    ) {
       if (known !== undefined && known.size === size && known.mtime === mtime) {
-        return Option.some(known);
+        return known;
       }
 
-      // A file that shrank was rewritten: start over.
       const base =
         known === undefined || size < known.offset ? undefined : known;
 
@@ -102,19 +141,70 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       // Keep a half-written last line for the next look.
       const end = bytes.lastIndexOf(NEWLINE) + 1;
 
-      const state: TranscriptState = {
+      const state: ReadState<A> = {
         mtime,
         offset: offset + end,
         size,
-        summary: parseLines(
-          bytes.subarray(0, end),
-          base?.summary ?? emptySummary
-        ),
+        value: fold(base?.value ?? empty, bytes.subarray(0, end)),
       };
+
+      return state;
+    });
+
+    /**
+     * Reads what was appended to a transcript since the last look, or nothing
+     * when the file hasn't changed since `cutoff`: its last message is
+     * older still, so it isn't listed and needn't be read.
+     */
+    const readTranscript = Effect.fn("readTranscript")(function* readTranscript(
+      file: string,
+      cutoff: number
+    ) {
+      const stat = yield* statOf(file);
+
+      if (stat.mtime < cutoff) {
+        transcripts.delete(file);
+
+        return Option.none<ReadState<TranscriptSummary>>();
+      }
+
+      const state = yield* readAppended(
+        file,
+        stat,
+        transcripts.get(file),
+        emptySummary,
+        parseLines
+      );
 
       transcripts.set(file, state);
 
       return Option.some(state);
+    });
+
+    /** A transcript's entries, kept in memory for the few read last. */
+    const readEntries = Effect.fn("readEntries")(function* readEntries(
+      file: string
+    ) {
+      const state = yield* readAppended(
+        file,
+        yield* statOf(file),
+        entryCache.get(file),
+        noEntries,
+        parseEntries
+      );
+
+      entryCache.delete(file);
+      entryCache.set(file, state);
+
+      for (const stale of entryCache.keys()) {
+        if (entryCache.size <= ENTRY_CACHE_SIZE) {
+          break;
+        }
+
+        entryCache.delete(stale);
+      }
+
+      return state.value.list;
     });
 
     const readTranscripts = Effect.fn("readTranscripts")(
@@ -139,14 +229,16 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
             seen.add(file);
 
             const state = yield* readTranscript(file, cutoff).pipe(
-              Effect.orElseSucceed(() => Option.none<TranscriptState>())
+              Effect.orElseSucceed(() =>
+                Option.none<ReadState<TranscriptSummary>>()
+              )
             );
 
             if (Option.isSome(state)) {
               found.push({
                 id: name.slice(0, -6),
                 projectDir,
-                summary: state.value.summary,
+                summary: state.value.value,
               });
             }
           }
@@ -161,6 +253,65 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
         return found;
       }
     );
+
+    /**
+     * The transcript file of a session: of several copies (see `scan`), the
+     * one with the newest message.
+     */
+    const transcriptFileOf = Effect.fn("transcriptFileOf")(
+      function* transcriptFileOf(sessionId: string) {
+        const fileName = `${sessionId}.jsonl`;
+        let best: { file: string; lastMessageAt: number } | undefined;
+
+        for (const projectDir of yield* listDir(projectsDir)) {
+          const names = yield* listDir(path.join(projectsDir, projectDir));
+
+          // Only names read from disk become paths, never the caller's id.
+          for (const name of names.filter((found) => found === fileName)) {
+            const file = path.join(projectsDir, projectDir, name);
+
+            // Any age: an old session opened from a link still has a Transcript.
+            const state = yield* readTranscript(file, 0).pipe(
+              Effect.orElseSucceed(() =>
+                Option.none<ReadState<TranscriptSummary>>()
+              )
+            );
+
+            const at = Option.isSome(state)
+              ? Date.parse(state.value.value.lastMessageAt ?? "")
+              : Number.NaN;
+
+            const lastMessageAt = Number.isNaN(at) ? 0 : at;
+
+            if (best === undefined || lastMessageAt > best.lastMessageAt) {
+              best = { file, lastMessageAt };
+            }
+          }
+        }
+
+        return Option.map(Option.fromUndefinedOr(best), ({ file }) => file);
+      }
+    );
+
+    const transcript = Effect.fn("transcript")(function* transcript(
+      sessionId: string
+    ) {
+      const file = yield* transcriptFileOf(sessionId);
+
+      return file.pipe(
+        Option.map((found) =>
+          Stream.fromEffectSchedule(
+            // An unreadable file (e.g. deleted since) reads as unchanged.
+            Effect.option(readEntries(found)),
+            Schedule.spaced(pollInterval)
+          ).pipe(
+            Stream.filter(Option.isSome),
+            Stream.map((entries) => entries.value),
+            Stream.changesWith((a, b) => a === b)
+          )
+        )
+      );
+    });
 
     /** The newest trusted status per session id. */
     const readStatuses = Effect.gen(function* readStatuses() {
@@ -228,9 +379,9 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           // The folder name encodes the cwd lossily; never decode it.
           project:
             summary.cwd === undefined ? projectDir : path.basename(summary.cwd),
-          // Without a trusted status record a session counts as Waiting for
-          // now; deriving it from the transcript is ticket #6.
-          status: statuses.get(id)?.status ?? "waiting",
+          // The status file is undocumented and may be missing, torn, stale or
+          // in a new format; then the transcript says whether a turn is open.
+          status: statuses.get(id)?.status ?? statusOf(summary),
           title: titleOf(summary),
           turnEndedAt: summary.turnEndedAt ?? null,
           turnStartedAt: summary.turnStartedAt ?? null,
@@ -250,6 +401,7 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       ).pipe(
         Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b))
       ),
+      transcript,
     };
 
     return source;

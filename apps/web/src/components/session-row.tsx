@@ -3,6 +3,7 @@
 // (c) 2026 T3 Tools Inc., apps/web/src/components/sidebar/SidebarThreadRow.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
+import { Link } from "@tanstack/react-router";
 import { CircleCheckIcon, CircleDashedIcon, GitBranchIcon } from "lucide-react";
 
 import { useNow } from "@/hooks/use-now.ts";
@@ -63,7 +64,7 @@ const SettleButton = ({ row }: { readonly row: Row }) => {
   return (
     <button
       aria-label={`${settled ? "Un-settle" : "Settle"} ${row.title}`}
-      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring -my-1 ml-auto shrink-0 rounded px-1.5 py-1 text-xs font-medium outline-none focus-visible:ring-2 disabled:opacity-64"
+      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute right-1.5 bottom-1 rounded px-1.5 py-1 text-xs font-medium outline-none focus-visible:ring-2 disabled:opacity-64"
       disabled={settle.isPending}
       onClick={() => settle.mutate({ id: row.id, settled: !settled })}
       type="button"
@@ -73,25 +74,31 @@ const SettleButton = ({ row }: { readonly row: Row }) => {
   );
 };
 
+// The Settle button sits over the card rather than inside the link, so the
+// two stay separate controls.
 export const SessionRow = ({ row }: { readonly row: Row }) => (
-  <li className="bg-card h-[4.875rem] rounded-xl border px-3 py-2">
-    <div className="flex min-w-0 items-center gap-1.5">
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {row.project}
-      </span>
-      <span className="text-muted-foreground ml-auto flex h-5 shrink-0 items-center text-xs tabular-nums">
-        <Mark mark={row.mark} />
-      </span>
-    </div>
-    <p className="mt-1 truncate text-sm">{row.title}</p>
-    <div className="text-muted-foreground mt-0.5 flex h-4 min-w-0 items-center gap-1 text-xs">
+  <li className="relative">
+    <Link
+      className="bg-card hover:bg-accent block h-[4.875rem] rounded-xl border px-3 py-2"
+      params={{ sessionId: row.id }}
+      to="/s/$sessionId"
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+          {row.project}
+        </span>
+        <span className="text-muted-foreground ml-auto flex h-5 shrink-0 items-center text-xs tabular-nums">
+          <Mark mark={row.mark} />
+        </span>
+      </div>
+      <p className="mt-1 truncate text-sm">{row.title}</p>
       {row.branch === null ? null : (
-        <>
+        <p className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 pr-16 text-xs">
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
           <span className="truncate">{row.branch}</span>
-        </>
+        </p>
       )}
-      <SettleButton row={row} />
-    </div>
+    </Link>
+    <SettleButton row={row} />
   </li>
 );

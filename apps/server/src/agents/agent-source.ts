@@ -1,9 +1,14 @@
 // Where sessions come from. Each agent Balcony observes (Claude now; Codex and
 // pi later) is one AgentSource. Callers only see the merged session list, so
 // adding an agent means adding a source, not changing callers.
-import type { Agent, Session, SessionMarks } from "@balcony/contracts";
+import type {
+  Agent,
+  Session,
+  SessionMarks,
+  TranscriptEntry,
+} from "@balcony/contracts";
 import { Context } from "effect";
-import type { Stream } from "effect";
+import type { Effect, Option, Stream } from "effect";
 
 /** A session as its agent's files describe it, without Balcony's own marks. */
 export type SourceSession = Omit<Session, keyof SessionMarks>;
@@ -16,6 +21,15 @@ export interface AgentSource {
    * it can.
    */
   readonly sessions: Stream.Stream<readonly SourceSession[]>;
+  /**
+   * A session's whole Transcript, oldest entry first, then the whole
+   * Transcript again after every change. Entries only get appended, unless
+   * the agent rewrote the Transcript. None when this source doesn't have the
+   * session.
+   */
+  readonly transcript: (
+    sessionId: string
+  ) => Effect.Effect<Option.Option<Stream.Stream<readonly TranscriptEntry[]>>>;
 }
 
 /** The agent sources the server observes. */
