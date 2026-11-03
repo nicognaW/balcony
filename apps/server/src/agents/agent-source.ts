@@ -25,7 +25,7 @@ export interface AgentSource {
    * A session's whole Transcript, oldest entry first, then the whole
    * Transcript again after every change. Entries only get appended, unless
    * the agent rewrote the Transcript. None when this source doesn't have the
-   * session.
+   * session or can't read its Transcript.
    */
   readonly transcript: (
     sessionId: string

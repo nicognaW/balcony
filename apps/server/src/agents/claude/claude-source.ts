@@ -295,15 +295,26 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     ) {
       const file = yield* transcriptFileOf(sessionId);
 
-      return file.pipe(
-        Option.map((found) =>
-          Stream.fromEffectSchedule(
-            // An unreadable file (e.g. deleted since) reads as unchanged.
-            Effect.option(readEntries(found)),
-            Schedule.spaced(pollInterval)
-          ).pipe(
-            Stream.filter(Option.isSome),
-            Stream.map((entries) => entries.value),
+      if (Option.isNone(file)) {
+        return Option.none<Stream.Stream<readonly TranscriptEntry[]>>();
+      }
+
+      // A file that can't be read at all is no Transcript.
+      const first = yield* Effect.option(readEntries(file.value));
+
+      return first.pipe(
+        Option.map((entries) =>
+          Stream.succeed(entries).pipe(
+            Stream.concat(
+              Stream.fromEffectSchedule(
+                // Unreadable since (e.g. deleted): unchanged.
+                Effect.option(readEntries(file.value)),
+                Schedule.spaced(pollInterval)
+              ).pipe(
+                Stream.filter(Option.isSome),
+                Stream.map((read) => read.value)
+              )
+            ),
             Stream.changesWith((a, b) => a === b)
           )
         )

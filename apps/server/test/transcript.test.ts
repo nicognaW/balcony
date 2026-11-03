@@ -1,5 +1,5 @@
 // Seam A: Transcripts through the generated client, against fixture sessions.
-import { appendFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { connect } from "@balcony/client";
@@ -340,6 +340,36 @@ describe("Transcripts over the oRPC WebSocket", () => {
           "7a000000-0000-4000-8000-0000000000a1",
           "7a000000-0000-4000-8000-0000000000a2",
         ]);
+      })
+    );
+
+    test.effect("fails with NOT_FOUND when the transcript can't be read", () =>
+      Effect.gen(function* unreadable() {
+        const { transcript } = yield* client;
+        const sessionId = "7a000000-0000-4000-8000-000000000002";
+
+        const file = yield* newTranscriptFile(sessionId);
+
+        // Listed like a transcript, but reading it fails.
+        yield* Effect.promise(() => mkdir(file));
+
+        const read = yield* Effect.flip(
+          call(() => transcript.read({ sessionId })).pipe(
+            Effect.timeout("3 seconds")
+          )
+        );
+
+        expect(read).toMatchObject({ code: "NOT_FOUND" });
+
+        const watch = yield* Effect.flip(
+          call(async () => {
+            const updates = await transcript.watch({ sessionId });
+
+            return updates.next();
+          }).pipe(Effect.timeout("3 seconds"))
+        );
+
+        expect(watch).toMatchObject({ code: "NOT_FOUND" });
       })
     );
 
