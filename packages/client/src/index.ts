@@ -6,7 +6,13 @@ import { RPCLink } from "@orpc/client/websocket";
 
 export type { BalconyClient } from "@balcony/contracts";
 
-export { createSessionList, WORKING_EXIT_GRACE_MS } from "./session-list.ts";
+export {
+  createSessionList,
+  SETTLED_FIRST_PAGE,
+  SETTLED_PAGE,
+  settledPage,
+  WORKING_EXIT_GRACE_MS,
+} from "./session-list.ts";
 
 export type {
   RowMark,

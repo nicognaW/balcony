@@ -8,11 +8,13 @@ import type { Session } from "@balcony/contracts";
 
 /**
  * The top-right corner of a row: Working with the time its turn began (null
- * when unknown), otherwise the time to show relative to now. Times are epoch
- * ms, so the row can tick without a new view.
+ * when unknown), Done when it finished a turn the user hasn't seen, otherwise
+ * the time to show relative to now. Times are epoch ms, so the row can tick
+ * without a new view.
  */
 export type RowMark =
   | { readonly kind: "working"; readonly since: number | null }
+  | { readonly kind: "done" }
   | { readonly kind: "time"; readonly at: number };
 
 export interface SessionRow {
@@ -29,6 +31,11 @@ export interface SessionListView {
   readonly working: readonly SessionRow[];
   /** Every other listed session, in inbox order. */
   readonly main: readonly SessionRow[];
+  /**
+   * Sessions the user settled, most recently settled first, for the
+   * collapsed section at the bottom. Page them with `settledPage`.
+   */
+  readonly settled: readonly SessionRow[];
 }
 
 export interface SessionListUpdate {
@@ -72,36 +79,61 @@ const newestFirst = (
 };
 
 /**
- * T3 Code's inbox order: the newest of the user's last message and the
- * agent's last turn start or finish.
+ * T3 Code's inbox order: the newest of the user's last message, the agent's
+ * last turn start or finish, and when the user un-settled the session.
  */
 const inboxTime = (session: Session, returnedAt = 0): number =>
   Math.max(
     returnedAt,
+    toMs(session.unsettledAt),
     toMs(session.lastUserMessageAt),
     toMs(session.turnStartedAt),
     toMs(session.turnEndedAt)
   );
 
+/** Settled by the user, with no activity since (the server checks that). */
+const isSettled = (session: Session): boolean => session.settledAt !== null;
+
 /** T3 Code's Working order: newest send first. */
 const sendTime = (session: Session): number =>
   toMs(session.lastUserMessageAt ?? session.turnStartedAt);
+
+/**
+ * Whether the session finished a turn after the user last viewed it. A
+ * session never opened isn't Done, as in T3 Code: everything would be.
+ */
+const isDone = (session: Session): boolean => {
+  const viewedAt = parseTime(session.lastViewedAt);
+  const endedAt = parseTime(session.turnEndedAt);
+
+  return viewedAt !== null && endedAt !== null && endedAt > viewedAt;
+};
+
+const markOf = (session: Session, working: boolean): RowMark => {
+  if (working) {
+    return {
+      kind: "working",
+      since: parseTime(session.turnStartedAt ?? session.lastUserMessageAt),
+    };
+  }
+
+  if (isDone(session)) {
+    return { kind: "done" };
+  }
+
+  // The user's last message time, as T3 Code shows.
+  return {
+    at: toMs(session.lastUserMessageAt ?? session.lastMessageAt),
+    kind: "time",
+  };
+};
 
 const rowOf =
   (working: boolean) =>
   (session: Session): SessionRow => ({
     branch: session.branch,
     id: session.id,
-    // Other rows show the user's last message time, as T3 Code does.
-    mark: working
-      ? {
-          kind: "working",
-          since: parseTime(session.turnStartedAt ?? session.lastUserMessageAt),
-        }
-      : {
-          at: toMs(session.lastUserMessageAt ?? session.lastMessageAt),
-          kind: "time",
-        },
+    mark: markOf(session, working),
     project: session.project,
     session,
     title: session.title,
@@ -126,6 +158,11 @@ export const createSessionList = () => {
 
   const track = (session: Session, now: number): Tracked => {
     const previous = tracked.get(session.id);
+
+    // Settling takes a session out of Working at once (T3 Code's `excluded`).
+    if (session.settledAt !== null) {
+      return { graceEndsAt: null, working: false };
+    }
 
     if (session.status === "working") {
       return { graceEndsAt: null, working: true };
@@ -166,6 +203,8 @@ export const createSessionList = () => {
     const isWorking = (session: Session) =>
       tracked.get(session.id)?.working === true;
 
+    const open = sessions.filter((session) => !isSettled(session));
+
     const graceEnds = [...tracked.values()].flatMap(({ graceEndsAt }) =>
       graceEndsAt === null ? [] : [graceEndsAt]
     );
@@ -174,12 +213,13 @@ export const createSessionList = () => {
       nextChangeAt: graceEnds.length > 0 ? Math.min(...graceEnds) : null,
       view: {
         main: newestFirst(
-          sessions.filter((session) => !isWorking(session)),
+          open.filter((session) => !isWorking(session)),
           (session) => inboxTime(session, returnedAt.get(session.id))
         ).map(rowOf(false)),
-        working: newestFirst(sessions.filter(isWorking), sendTime).map(
-          rowOf(true)
-        ),
+        settled: newestFirst(sessions.filter(isSettled), (session) =>
+          toMs(session.settledAt)
+        ).map(rowOf(false)),
+        working: newestFirst(open.filter(isWorking), sendTime).map(rowOf(true)),
       },
     };
   };
@@ -189,3 +229,31 @@ export const createSessionList = () => {
 
 /** A session list made by `createSessionList`. */
 export type SessionListModel = ReturnType<typeof createSessionList>;
+
+/** Settled sessions shown before the user asks for more (T3 Code's count). */
+export const SETTLED_FIRST_PAGE = 10;
+
+/** Settled sessions added each time the user asks for more. */
+export const SETTLED_PAGE = 25;
+
+export interface SettledPage {
+  readonly rows: readonly SessionRow[];
+  /** Settled rows not shown yet. */
+  readonly hidden: number;
+}
+
+/**
+ * The settled rows to show after the user asked for more `more` times, and
+ * how many stay hidden (for "Show more").
+ */
+export const settledPage = (
+  settled: readonly SessionRow[],
+  more: number
+): SettledPage => {
+  const count = SETTLED_FIRST_PAGE + more * SETTLED_PAGE;
+
+  return {
+    hidden: Math.max(0, settled.length - count),
+    rows: settled.slice(0, count),
+  };
+};

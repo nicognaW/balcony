@@ -48,8 +48,15 @@ export const Session = Schema.Struct({
   lastMessageAt: Schema.String,
   /** When the user last sent the agent a message. */
   lastUserMessageAt: Time,
+  /** When the user last opened the session on any client; null if never. */
+  lastViewedAt: Time,
   /** Label for the session's working directory, e.g. its folder name. */
   project: Schema.String,
+  /**
+   * When the user settled the session; null when it isn't Settled, including
+   * once new activity has un-settled it.
+   */
+  settledAt: Time,
   status: SessionStatus,
   title: Schema.String,
   /** When the agent last finished a turn. */
@@ -59,9 +66,22 @@ export const Session = Schema.Struct({
    * woke the agent (a finished background task, another session).
    */
   turnStartedAt: Time,
+  /** When the user last un-settled the session by hand. */
+  unsettledAt: Time,
 });
 
 export type Session = typeof Session.Type;
+
+/** The fields Balcony keeps itself; the rest come from the agent's files. */
+export type SessionMarks = Pick<
+  Session,
+  "lastViewedAt" | "settledAt" | "unsettledAt"
+>;
+
+/** Names one session. */
+export const SessionRef = Schema.Struct({ id: Schema.String });
+
+export type SessionRef = typeof SessionRef.Type;
 
 /** The whole session list. Each event replaces the previous one. */
 export const SessionList = Schema.Struct({
@@ -104,6 +124,15 @@ export const contract = {
       .output(std(PairingToken)),
   },
   sessions: {
+    /**
+     * Records that the user opened the session now, which clears Done on
+     * every client. Call it on opening a session and while it stays open.
+     */
+    markViewed: oc.input(std(SessionRef)),
+    /** Moves the session to Settled until it has new activity. Claude is not told. */
+    settle: oc.input(std(SessionRef)),
+    /** Moves a Settled session back to the main list. */
+    unsettle: oc.input(std(SessionRef)),
     /** The current session list, then a new list on every change. */
     watch: oc.output(asyncIteratorObject(std(SessionList))),
   },

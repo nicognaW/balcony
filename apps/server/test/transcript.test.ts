@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import { fixtureSessions } from "./fixture-home.ts";
-import { call, FixtureServer } from "./fixture-server.ts";
+import { call, Fixture } from "./fixture-server.ts";
 
 /** A fixture session's id by its manifest name. */
 const fixtureId = (name: string): string => {
@@ -21,13 +21,13 @@ const fixtureId = (name: string): string => {
 };
 
 const client = Effect.gen(function* makeClient() {
-  const { server } = yield* FixtureServer;
+  const { server } = yield* Fixture;
 
   return connect({ server: server.origin, token: server.token }).client;
 });
 
 describe("Transcripts over the oRPC WebSocket", () => {
-  it.layer(FixtureServer.layer, { excludeTestServices: true })((test) => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
     test.effect(
       "normalises messages, file changes, subagents and commands",
       () =>
@@ -158,7 +158,7 @@ describe("Transcripts over the oRPC WebSocket", () => {
     test.effect("appends new entries live while the session is open", () =>
       Effect.gen(function* appendsLive() {
         const { transcript } = yield* client;
-        const { claude } = yield* FixtureServer;
+        const { claude } = yield* Fixture;
         const sessionId = fixtureId("waiting");
 
         const updates = yield* Effect.acquireRelease(
@@ -287,7 +287,7 @@ describe("Transcripts over the oRPC WebSocket", () => {
 
     test.effect("rejects Transcript calls without the token", () =>
       Effect.gen(function* rejects() {
-        const { server } = yield* FixtureServer;
+        const { server } = yield* Fixture;
 
         const { transcript } = connect({
           server: server.origin,
