@@ -35,6 +35,7 @@ export const BalconyProvider = ({
         : {
             ...paired,
             unpair: () => {
+              paired.connection.close();
               forgetToken();
               queryClient.clear();
               setPaired(null);

@@ -102,6 +102,7 @@ const App = () => {
         : {
             ...paired,
             unpair: (reason) => {
+              paired.connection.close();
               void forgetToken();
               queryClient.clear();
               setRefused(reason === "refused");
