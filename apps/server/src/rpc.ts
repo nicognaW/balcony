@@ -8,9 +8,12 @@ import { implement, ORPCError } from "@orpc/server";
 import { Effect, Stream } from "effect";
 
 import { PairingCodes } from "./pairing-code.ts";
+import { SessionMarks } from "./session-marks.ts";
 import { Sessions } from "./sessions.ts";
 
-export interface RpcContext extends WithEffectContext<PairingCodes | Sessions> {
+export interface RpcContext extends WithEffectContext<
+  PairingCodes | SessionMarks | Sessions
+> {
   /** The token the socket connected with, from its `?token=` parameter. */
   readonly token: string | null;
   /** The server's token. */
@@ -80,6 +83,23 @@ export const router = os.router({
     }),
   },
   sessions: {
+    markViewed: os.sessions.markViewed.use(authed).effect(function* markViewed({
+      input,
+    }) {
+      const marks = yield* SessionMarks;
+      yield* marks.markViewed(input.id);
+    }),
+    // Settling only changes Balcony's marks; the agent is never told.
+    settle: os.sessions.settle.use(authed).effect(function* settle({ input }) {
+      const marks = yield* SessionMarks;
+      yield* marks.settle(input.id);
+    }),
+    unsettle: os.sessions.unsettle.use(authed).effect(function* unsettle({
+      input,
+    }) {
+      const marks = yield* SessionMarks;
+      yield* marks.unsettle(input.id);
+    }),
     watch: os.sessions.watch.use(authed).effect(function* watchSessions() {
       const sessions = yield* Sessions;
 

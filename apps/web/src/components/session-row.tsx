@@ -3,9 +3,10 @@
 // (c) 2026 T3 Tools Inc., apps/web/src/components/sidebar/SidebarThreadRow.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
-import { CircleDashedIcon, GitBranchIcon } from "lucide-react";
+import { CircleCheckIcon, CircleDashedIcon, GitBranchIcon } from "lucide-react";
 
 import { useNow } from "@/hooks/use-now.ts";
+import { useSettle } from "@/hooks/use-session-marks.ts";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);
@@ -23,21 +24,52 @@ const RelativeTime = ({ at }: { readonly at: number }) => {
   );
 };
 
-/** Working with its elapsed time, or how long ago the session was active. */
+/** Working with its elapsed time, Done, or how long ago the session was active. */
 const Mark = ({ mark }: { readonly mark: RowMark }) => {
-  if (mark.kind === "time") {
-    return <RelativeTime at={mark.at} />;
+  switch (mark.kind) {
+    case "time": {
+      return <RelativeTime at={mark.at} />;
+    }
+
+    case "done": {
+      return (
+        <span className="text-success-foreground inline-flex items-center gap-1 font-medium">
+          <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
+          Done
+        </span>
+      );
+    }
+
+    default: {
+      return (
+        <span className="text-info-foreground inline-flex items-center gap-1 font-medium">
+          <CircleDashedIcon
+            aria-hidden
+            className="motion-safe:animate-spin-slow size-4 shrink-0"
+          />
+          Working
+          {mark.since === null ? null : <WorkingDuration since={mark.since} />}
+        </span>
+      );
+    }
   }
+};
+
+/** Settles the session, or un-settles it when it is Settled. */
+const SettleButton = ({ row }: { readonly row: Row }) => {
+  const settle = useSettle();
+  const settled = row.session.settledAt !== null;
 
   return (
-    <span className="text-info-foreground inline-flex items-center gap-1 font-medium">
-      <CircleDashedIcon
-        aria-hidden
-        className="motion-safe:animate-spin-slow size-4 shrink-0"
-      />
-      Working
-      {mark.since === null ? null : <WorkingDuration since={mark.since} />}
-    </span>
+    <button
+      aria-label={`${settled ? "Un-settle" : "Settle"} ${row.title}`}
+      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring -my-1 ml-auto shrink-0 rounded px-1.5 py-1 text-xs font-medium outline-none focus-visible:ring-2 disabled:opacity-64"
+      disabled={settle.isPending}
+      onClick={() => settle.mutate({ id: row.id, settled: !settled })}
+      type="button"
+    >
+      {settled ? "Un-settle" : "Settle"}
+    </button>
   );
 };
 
@@ -52,11 +84,14 @@ export const SessionRow = ({ row }: { readonly row: Row }) => (
       </span>
     </div>
     <p className="mt-1 truncate text-sm">{row.title}</p>
-    {row.branch === null ? null : (
-      <p className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 text-xs">
-        <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-        <span className="truncate">{row.branch}</span>
-      </p>
-    )}
+    <div className="text-muted-foreground mt-0.5 flex h-4 min-w-0 items-center gap-1 text-xs">
+      {row.branch === null ? null : (
+        <>
+          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          <span className="truncate">{row.branch}</span>
+        </>
+      )}
+      <SettleButton row={row} />
+    </div>
   </li>
 );

@@ -2,7 +2,7 @@
 import type { Session } from "@balcony/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { createSessionList } from "../src/session-list.ts";
+import { createSessionList, settledPage } from "../src/session-list.ts";
 import type { SessionListView } from "../src/session-list.ts";
 
 const at = (time: string) => Date.parse(`2026-01-15T${time}Z`);
@@ -13,11 +13,14 @@ const session = (id: string, fields: Partial<Session> = {}): Session => ({
   id,
   lastMessageAt: "2026-01-15T09:00:00.000Z",
   lastUserMessageAt: null,
+  lastViewedAt: null,
   project: "balcony",
+  settledAt: null,
   status: "waiting",
   title: `Session ${id}`,
   turnEndedAt: null,
   turnStartedAt: null,
+  unsettledAt: null,
   ...fields,
 });
 
@@ -159,6 +162,146 @@ describe("session list", () => {
         { at: at("11:00:00"), kind: "time" },
         { at: at("10:00:00"), kind: "time" },
       ]);
+    });
+  });
+
+  describe("Done", () => {
+    const finished = {
+      lastMessageAt: "2026-01-15T11:30:00.000Z",
+      lastUserMessageAt: "2026-01-15T11:00:00.000Z",
+      turnEndedAt: "2026-01-15T11:30:00.000Z",
+    };
+
+    it("marks a session that finished a turn after the user last viewed it", () => {
+      const { view } = createSessionList().update(
+        [
+          session("unseen", {
+            ...finished,
+            lastViewedAt: "2026-01-15T11:10:00.000Z",
+          }),
+          session("seen", {
+            ...finished,
+            lastViewedAt: "2026-01-15T11:40:00.000Z",
+          }),
+        ],
+        at("12:00:00")
+      );
+
+      expect(view.main.map((row) => [row.id, row.mark])).toEqual([
+        ["seen", { at: at("11:00:00"), kind: "time" }],
+        ["unseen", { kind: "done" }],
+      ]);
+    });
+
+    it("doesn't mark a session the user has never opened", () => {
+      const { view } = createSessionList().update(
+        [session("new", finished)],
+        at("12:00:00")
+      );
+
+      expect(view.main[0]?.mark).toEqual({ at: at("11:00:00"), kind: "time" });
+    });
+
+    it("shows Working rather than Done while a new turn runs", () => {
+      const { view } = createSessionList().update(
+        [
+          session("again", {
+            ...finished,
+            lastViewedAt: "2026-01-15T11:10:00.000Z",
+            status: "working",
+            turnStartedAt: "2026-01-15T11:50:00.000Z",
+          }),
+        ],
+        at("12:00:00")
+      );
+
+      expect(view.working[0]?.mark.kind).toBe("working");
+    });
+  });
+
+  describe("Settled", () => {
+    it("moves settled sessions out of the main list into their own section, most recently settled first", () => {
+      const { view } = createSessionList().update(
+        [
+          session("open"),
+          session("early", { settledAt: "2026-01-15T10:00:00.000Z" }),
+          session("late", { settledAt: "2026-01-15T11:00:00.000Z" }),
+        ],
+        at("12:00:00")
+      );
+
+      expect(ids(view.main)).toEqual(["open"]);
+      expect(ids(view.settled)).toEqual(["late", "early"]);
+    });
+
+    it("keeps a settled session out of Working, with no grace", () => {
+      const list = createSessionList();
+      const running = session("run", { status: "working" });
+      list.update([running], at("12:00:00"));
+
+      const { nextChangeAt, view } = list.update(
+        [{ ...running, settledAt: "2026-01-15T12:00:05.000Z" }],
+        at("12:00:05")
+      );
+
+      expect(view.working).toEqual([]);
+      expect(ids(view.settled)).toEqual(["run"]);
+      expect(nextChangeAt).toBeNull();
+    });
+
+    it("brings a session back when new activity un-settles it", () => {
+      const list = createSessionList();
+      const quiet = session("s", { settledAt: "2026-01-15T11:00:00.000Z" });
+      expect(ids(list.update([quiet], at("12:00:00")).view.settled)).toEqual([
+        "s",
+      ]);
+
+      // The server clears settledAt once the session has a newer message.
+      const { view } = list.update(
+        [{ ...quiet, settledAt: null, status: "working" }],
+        at("12:00:05")
+      );
+
+      expect(view.settled).toEqual([]);
+      expect(ids(view.working)).toEqual(["s"]);
+    });
+
+    it("puts a session un-settled by hand at the top of the main list", () => {
+      const { view } = createSessionList().update(
+        [
+          session("recent", { turnEndedAt: "2026-01-15T11:00:00.000Z" }),
+          session("back", {
+            turnEndedAt: "2026-01-15T08:00:00.000Z",
+            unsettledAt: "2026-01-15T11:30:00.000Z",
+          }),
+        ],
+        at("12:00:00")
+      );
+
+      expect(ids(view.main)).toEqual(["back", "recent"]);
+    });
+
+    it("shows 10 settled sessions, then 25 more each time the user asks", () => {
+      const { view } = createSessionList().update(
+        Array.from({ length: 40 }, (_, index) =>
+          session(`s${String(index).padStart(2, "0")}`, {
+            settledAt: "2026-01-15T10:00:00.000Z",
+          })
+        ),
+        at("12:00:00")
+      );
+
+      const first = settledPage(view.settled, 0);
+      expect(ids(first.rows)).toEqual(ids(view.settled).slice(0, 10));
+      expect(first.hidden).toBe(30);
+
+      const second = settledPage(view.settled, 1);
+      expect(second.rows).toHaveLength(35);
+      expect(second.hidden).toBe(5);
+
+      const third = settledPage(view.settled, 2);
+      expect(third.rows).toHaveLength(40);
+      expect(third.hidden).toBe(0);
     });
   });
 

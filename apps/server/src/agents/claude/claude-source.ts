@@ -3,11 +3,10 @@
 // `~/.claude/sessions/<pid>.json`. Nothing is ever written there.
 import path from "node:path";
 
-import type { Session } from "@balcony/contracts";
 import type { Duration } from "effect";
 import { Effect, FileSystem, Option, Schedule, Stream } from "effect";
 
-import type { AgentSource } from "../agent-source.ts";
+import type { AgentSource, SourceSession } from "../agent-source.ts";
 import { parseStatusFile, statusFilePid } from "./status-files.ts";
 import type { LiveStatus } from "./status-files.ts";
 import { branchOf, emptySummary, foldLine, titleOf } from "./transcript.ts";
@@ -197,7 +196,7 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
 
     const scan = Effect.gen(function* scan() {
       const statuses = yield* readStatuses;
-      const byId = new Map<string, Session>();
+      const byId = new Map<string, SourceSession>();
       const cutoff = now() - LIST_WINDOW_MS;
 
       for (const { id, projectDir, summary } of yield* readTranscripts(
