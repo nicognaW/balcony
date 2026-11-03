@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./server-address": "./src/server-address.ts",
     "./transcript": "./src/transcript.ts"
   },
   "scripts": {

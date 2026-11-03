@@ -6,11 +6,13 @@ import { jsPluginSettings, selectJsPlugins } from "ultracite/oxlint/js-plugins";
 import shadcn from "ultracite/oxlint/shadcn";
 
 /**
- * Files no one edits: generated code and fixtures copied from real agent
+ * Files no one edits: generated code (TanStack Router's route tree, the
+ * types Uniwind's Metro plugin writes) and fixtures copied from real agent
  * files (some deliberately malformed). Formatting is skipped for them too.
  */
 export const generatedFiles = [
   "**/routeTree.gen.ts",
+  "**/uniwind-types.d.ts",
   "apps/server/test/fixtures/**",
 ];
 

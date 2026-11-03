@@ -1,8 +1,15 @@
 {
-  // No DOM in React Native; its types come with the react-native package.
+  // ES2023 for @balcony/client (toSorted; Hermes since React Native 0.74).
+  // DOM types the client's WebSocket and URL as the browser has them (Expo's
+  // own base config does the same); React Native's types come with the
+  // react-native package. `react-native` resolves packages to their React
+  // Native builds, as Metro does.
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "jsx": "react-jsx"
+    "lib": ["ES2023", "DOM"],
+    "jsx": "react-jsx",
+    "customConditions": ["react-native"]
   },
-  "include": ["**/*"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "android", "ios", ".expo", "dist"]
 }
