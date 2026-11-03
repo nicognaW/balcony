@@ -112,6 +112,10 @@ pass() {
   local suffix=$1
 
   # The hidden entry: long-press the pairing title, then leave again.
+  # Animations off for this part: uiautomator never sees the screen idle
+  # while the Working spinner turns (the app stops it when they're off).
+  adb shell settings put global animator_duration_scale 0
+  adb shell settings put global transition_animation_scale 0
   adb shell am force-stop "$package"
   adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   find_view "Pair with your Mac" >/dev/null
@@ -120,6 +124,10 @@ pass() {
   shot "long-press-busy-day$suffix"
   tap "Exit"
   shot "after-exit$suffix"
+  adb shell settings put global animator_duration_scale 1
+  adb shell settings put global transition_animation_scale 1
+  # Reanimated reads the setting at start: the next link starts afresh.
+  adb shell am force-stop "$package"
 
   open_link "scenario=busy-day&screen=sessions"
   shot "busy-day-sessions$suffix"
