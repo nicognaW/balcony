@@ -11,7 +11,13 @@ import type { AgentSource } from "../agent-source.ts";
 import { entriesOfLine } from "./entries.ts";
 import { parseStatusFile, statusFilePid } from "./status-files.ts";
 import type { LiveStatus } from "./status-files.ts";
-import { branchOf, emptySummary, foldLine, titleOf } from "./transcript.ts";
+import {
+  branchOf,
+  emptySummary,
+  foldLine,
+  statusOf,
+  titleOf,
+} from "./transcript.ts";
 import type { TranscriptSummary } from "./transcript.ts";
 
 export interface ClaudeSourceOptions {
@@ -373,9 +379,9 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           // The folder name encodes the cwd lossily; never decode it.
           project:
             summary.cwd === undefined ? projectDir : path.basename(summary.cwd),
-          // Without a trusted status record a session counts as Waiting for
-          // now; deriving it from the transcript is ticket #6.
-          status: statuses.get(id)?.status ?? "waiting",
+          // The status file is undocumented and may be missing, torn, stale or
+          // in a new format; then the transcript says whether a turn is open.
+          status: statuses.get(id)?.status ?? statusOf(summary),
           title: titleOf(summary),
           turnEndedAt: summary.turnEndedAt ?? null,
           turnStartedAt: summary.turnStartedAt ?? null,
