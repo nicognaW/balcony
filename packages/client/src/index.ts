@@ -1,7 +1,7 @@
 // The typed Balcony client over WebSocket, shared by the web app, the mobile
 // app and the server's contract tests.
 import type { BalconyClient } from "@balcony/contracts";
-import { createORPCClient } from "@orpc/client";
+import { createORPCClient, ORPCError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 
 export type { BalconyClient } from "@balcony/contracts";
@@ -85,6 +85,61 @@ export const exchangePairingCode = async ({
     return token;
   } finally {
     socket.close();
+  }
+};
+
+/** Whether the server refused the call because the token is wrong. */
+export const isUnauthorized = (error: Error | null): boolean =>
+  error instanceof ORPCError && error.code === "UNAUTHORIZED";
+
+/**
+ * Why a short code didn't pair: the contract's pairing errors, `unreachable`
+ * when the server couldn't be reached, `other` for anything else.
+ */
+export type PairingRefusal =
+  | "wrong"
+  | "expired"
+  | "locked"
+  | "unreachable"
+  | "other";
+
+const refusalOf = (code: string): PairingRefusal => {
+  switch (code) {
+    case "PAIRING_CODE_WRONG": {
+      return "wrong";
+    }
+
+    case "PAIRING_CODE_EXPIRED": {
+      return "expired";
+    }
+
+    case "PAIRING_CODE_LOCKED": {
+      return "locked";
+    }
+
+    default: {
+      return "other";
+    }
+  }
+};
+
+/**
+ * Exchanges the short pairing code for the token, as `exchangePairingCode`,
+ * but tells why it didn't pair instead of failing, for the pairing screen.
+ */
+export const redeemPairingCode = async (pairing: {
+  readonly code: string;
+  readonly server: string;
+}): Promise<
+  { readonly token: string } | { readonly refusal: PairingRefusal }
+> => {
+  try {
+    return { token: await exchangePairingCode(pairing) };
+  } catch (error) {
+    return {
+      refusal:
+        error instanceof ORPCError ? refusalOf(error.code) : "unreachable",
+    };
   }
 };
 

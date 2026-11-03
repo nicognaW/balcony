@@ -1,7 +1,8 @@
 // The session list, live: Working on top, then the rest in T3 Code's inbox
 // order, then Settled (collapsed), from the shared client view model.
-import { settledPage } from "@balcony/client";
+import { isUnauthorized, settledPage } from "@balcony/client";
 import type { SessionRow as Row } from "@balcony/client";
+import { useSessionList } from "@balcony/client/react";
 import type { Session } from "@balcony/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react-native";
@@ -11,8 +12,6 @@ import { FlatList, Pressable, Text, View } from "react-native";
 import { Icon } from "../components/icon.tsx";
 import { SessionRow } from "../components/session-row.tsx";
 import { usePaired } from "../hooks/use-paired.ts";
-import { useSessionList } from "../hooks/use-session-list.ts";
-import { isUnauthorized } from "../lib/connection.ts";
 import type { ScreenProps } from "../navigation.ts";
 
 type Item =

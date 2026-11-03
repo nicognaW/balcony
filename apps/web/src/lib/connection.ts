@@ -1,9 +1,8 @@
 // The connection to the Balcony server, made once when the page loads.
-import { connect, exchangePairingCode } from "@balcony/client";
-import type { Connection } from "@balcony/client";
-import { ORPCError } from "@orpc/client";
+import { connect, redeemPairingCode } from "@balcony/client";
+import type { Connection, PairingRefusal } from "@balcony/client";
+import { createQueryClient } from "@balcony/client/react";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
-import { QueryClient } from "@tanstack/react-query";
 import { createContext } from "react";
 
 import { loadToken, saveToken, takeTokenFromUrl } from "./pairing.ts";
@@ -23,10 +22,6 @@ export interface Paired extends PairedConnection {
 
 export const PairedContext = createContext<Paired | null>(null);
 
-/** Whether the server refused the call because the token is wrong. */
-export const isUnauthorized = (error: Error | null): boolean =>
-  error instanceof ORPCError && error.code === "UNAUTHORIZED";
-
 const connectWith = (token: string): PairedConnection => {
   const connection = connect({ server: window.location.origin, token });
 
@@ -44,37 +39,6 @@ export const connectPaired = (): PairedConnection | null => {
 };
 
 /**
- * Why a short code didn't pair: the contract's pairing errors, `unreachable`
- * when the server couldn't be reached, `other` for anything else.
- */
-export type PairingRefusal =
-  | "wrong"
-  | "expired"
-  | "locked"
-  | "unreachable"
-  | "other";
-
-const refusalOf = (code: string): PairingRefusal => {
-  switch (code) {
-    case "PAIRING_CODE_WRONG": {
-      return "wrong";
-    }
-
-    case "PAIRING_CODE_EXPIRED": {
-      return "expired";
-    }
-
-    case "PAIRING_CODE_LOCKED": {
-      return "locked";
-    }
-
-    default: {
-      return "other";
-    }
-  }
-};
-
-/**
  * Exchanges the short code `balcony` shows for the token, stores it and
  * connects with it.
  */
@@ -83,32 +47,18 @@ export const pairWithCode = async (
 ): Promise<
   { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
 > => {
-  try {
-    const token = await exchangePairingCode({
-      code,
-      server: window.location.origin,
-    });
+  const result = await redeemPairingCode({
+    code,
+    server: window.location.origin,
+  });
 
-    saveToken(token);
-
-    return { paired: connectWith(token) };
-  } catch (error) {
-    if (!(error instanceof ORPCError)) {
-      return { refusal: "unreachable" };
-    }
-
-    return { refusal: refusalOf(error.code) };
+  if ("refusal" in result) {
+    return result;
   }
+
+  saveToken(result.token);
+
+  return { paired: connectWith(result.token) };
 };
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Live data only: refetching on focus would restart live streams.
-      refetchOnWindowFocus: false,
-      // Keep retrying through reconnects, unless the pairing is refused.
-      retry: (_count, error) => !isUnauthorized(error),
-      retryDelay: 1000,
-    },
-  },
-});
+export const queryClient = createQueryClient();

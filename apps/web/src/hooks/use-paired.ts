@@ -1,5 +1,4 @@
-import type { ConnectionState } from "@balcony/client";
-import { use, useSyncExternalStore } from "react";
+import { use } from "react";
 
 import { PairedContext } from "@/lib/connection.ts";
 import type { Paired } from "@/lib/connection.ts";
@@ -12,10 +11,4 @@ export const usePaired = (): Paired => {
   }
 
   return paired;
-};
-
-export const useConnectionState = (): ConnectionState => {
-  const { connection } = usePaired();
-
-  return useSyncExternalStore(connection.subscribe, connection.getState);
 };

@@ -1,10 +1,10 @@
+import type { PairingRefusal } from "@balcony/client";
 import { QrCodeIcon } from "lucide-react";
 import { useActionState, useId } from "react";
 
 import type { NotPairedProps } from "@/components/balcony-provider.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { pairWithCode } from "@/lib/connection.ts";
-import type { PairingRefusal } from "@/lib/connection.ts";
 
 const NEW_CODE_HINT =
   "Press Enter in the terminal running balcony for a new one.";

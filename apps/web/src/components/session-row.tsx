@@ -3,11 +3,11 @@
 // (c) 2026 T3 Tools Inc., apps/web/src/components/sidebar/SidebarThreadRow.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
+import { useNow, useSettle } from "@balcony/client/react";
 import { Link } from "@tanstack/react-router";
 import { CircleCheckIcon, CircleDashedIcon, GitBranchIcon } from "lucide-react";
 
-import { useNow } from "@/hooks/use-now.ts";
-import { useSettle } from "@/hooks/use-session-marks.ts";
+import { usePaired } from "@/hooks/use-paired.ts";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);
@@ -58,7 +58,7 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
 
 /** Settles the session, or un-settles it when it is Settled. */
 const SettleButton = ({ row }: { readonly row: Row }) => {
-  const settle = useSettle();
+  const settle = useSettle(usePaired().connection.client);
   const settled = row.session.settledAt !== null;
 
   return (

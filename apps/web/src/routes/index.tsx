@@ -1,5 +1,6 @@
-import { settledPage } from "@balcony/client";
+import { isUnauthorized, settledPage } from "@balcony/client";
 import type { SessionRow as Row } from "@balcony/client";
+import { useSessionList } from "@balcony/client/react";
 import type { Session } from "@balcony/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -8,8 +9,6 @@ import { useEffect, useId, useState } from "react";
 
 import { SessionRow } from "@/components/session-row.tsx";
 import { usePaired } from "@/hooks/use-paired.ts";
-import { useSessionList } from "@/hooks/use-session-list.ts";
-import { isUnauthorized } from "@/lib/connection.ts";
 
 const Rows = ({ rows }: { readonly rows: readonly Row[] }) => (
   <ul className="flex flex-col gap-2">

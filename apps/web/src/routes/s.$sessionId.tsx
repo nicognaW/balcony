@@ -1,11 +1,13 @@
+// A session's Transcript, full screen. It opens on the newest entries, pages
+// back with "Load earlier" and follows new entries live. Sessions are
+// View-only, so there is no message box.
+import { isUnauthorized } from "@balcony/client";
+import { useMarkViewed } from "@balcony/client/react";
 import {
   earliestId,
   joinTranscript,
   liveTranscript,
 } from "@balcony/client/transcript";
-// A session's Transcript, full screen. It opens on the newest entries, pages
-// back with "Load earlier" and follows new entries live. Sessions are
-// View-only, so there is no message box.
 import type { TranscriptEntry } from "@balcony/contracts";
 import { ORPCError } from "@orpc/client";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
@@ -14,8 +16,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { TranscriptEntryRow } from "@/components/transcript/transcript-entry.tsx";
 import { usePaired } from "@/hooks/use-paired.ts";
-import { useMarkViewed } from "@/hooks/use-session-marks.ts";
-import { isUnauthorized } from "@/lib/connection.ts";
 
 /** How close to the bottom (px) still counts as following the Transcript. */
 const FOLLOW_SLACK = 80;
@@ -68,9 +68,9 @@ const Message = ({ children }: { readonly children: string }) => (
 
 const TranscriptScreen = () => {
   const { sessionId } = useParams({ from: "/s/$sessionId" });
-  const { orpc, unpair } = usePaired();
+  const { connection, orpc, unpair } = usePaired();
   // Opening the session clears Done on every client.
-  useMarkViewed(sessionId);
+  useMarkViewed(connection.client, sessionId);
 
   const watch = useQuery(
     orpc.transcript.watch.streamedOptions({
