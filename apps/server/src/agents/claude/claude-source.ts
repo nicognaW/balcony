@@ -90,6 +90,12 @@ const parseEntries = (known: Entries, bytes: Uint8Array): Entries => {
   return ids === undefined ? known : { ids, list: [...known.list, ...added] };
 };
 
+/**
+ * Transcripts older than the window are looked at again only every this many
+ * scans: they rarely change, and there can be thousands.
+ */
+const OLD_FILE_RECHECK_SCANS = 10;
+
 /** How many transcripts keep their entries in memory for paging and watching. */
 const ENTRY_CACHE_SIZE = 8;
 
@@ -104,6 +110,10 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const sessionsDir = path.join(claudeDir, "sessions");
     const transcripts = new Map<string, ReadState<TranscriptSummary>>();
     const entryCache = new Map<string, ReadState<Entries>>();
+    /** Transcript files by session id, as the last scan listed them. */
+    let filesById = new Map<string, readonly string[]>();
+    /** Files last seen older than the window, and how many scans ago. */
+    const oldFiles = new Map<string, number>();
 
     const listDir = (dir: string) =>
       fs
@@ -243,9 +253,25 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       return state.value.list;
     });
 
+    /** Whether to look at a file this scan: old ones only now and then. */
+    const dueForLook = (file: string) => {
+      const skipped = oldFiles.get(file);
+
+      if (skipped === undefined || skipped + 1 >= OLD_FILE_RECHECK_SCANS) {
+        oldFiles.delete(file);
+
+        return true;
+      }
+
+      oldFiles.set(file, skipped + 1);
+
+      return false;
+    };
+
     const readTranscripts = Effect.fn("readTranscripts")(
       function* readTranscripts(cutoff: number) {
         const seen = new Set<string>();
+        const byId = new Map<string, string[]>();
 
         const found: {
           id: string;
@@ -261,8 +287,14 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
               continue;
             }
 
+            const id = name.slice(0, -6);
             const file = path.join(projectsDir, projectDir, name);
             seen.add(file);
+            byId.set(id, [...(byId.get(id) ?? []), file]);
+
+            if (!dueForLook(file)) {
+              continue;
+            }
 
             const state = yield* readTranscript(file, cutoff).pipe(
               Effect.orElseSucceed(() =>
@@ -271,11 +303,9 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
             );
 
             if (Option.isSome(state)) {
-              found.push({
-                id: name.slice(0, -6),
-                projectDir,
-                summary: state.value.value,
-              });
+              found.push({ id, projectDir, summary: state.value.value });
+            } else {
+              oldFiles.set(file, 0);
             }
           }
         }
@@ -286,46 +316,74 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           }
         }
 
+        for (const file of oldFiles.keys()) {
+          if (!seen.has(file)) {
+            oldFiles.delete(file);
+          }
+        }
+
+        filesById = byId;
+
         return found;
       }
     );
 
-    /**
-     * The transcript file of a session: of several copies (see `scan`), the
-     * one with the newest message.
-     */
-    const transcriptFileOf = Effect.fn("transcriptFileOf")(
-      function* transcriptFileOf(sessionId: string) {
+    /** Every copy of a session's transcript, looking in each project. */
+    const findTranscriptFiles = Effect.fn("findTranscriptFiles")(
+      function* findTranscriptFiles(sessionId: string) {
         const fileName = `${sessionId}.jsonl`;
-        let best: { file: string; lastMessageAt: number } | undefined;
+        const files: string[] = [];
 
         for (const projectDir of yield* listDir(projectsDir)) {
           const names = yield* listDir(path.join(projectsDir, projectDir));
 
           // Only names read from disk become paths, never the caller's id.
           for (const name of names.filter((found) => found === fileName)) {
-            const file = path.join(projectsDir, projectDir, name);
-
-            // Any age: an old session opened from a link still has a Transcript.
-            const state = yield* readTranscript(file, 0).pipe(
-              Effect.orElseSucceed(() =>
-                Option.none<ReadState<TranscriptSummary>>()
-              )
-            );
-
-            const at = Option.isSome(state)
-              ? Date.parse(state.value.value.lastMessageAt ?? "")
-              : Number.NaN;
-
-            const lastMessageAt = Number.isNaN(at) ? 0 : at;
-
-            if (best === undefined || lastMessageAt > best.lastMessageAt) {
-              best = { file, lastMessageAt };
-            }
+            files.push(path.join(projectsDir, projectDir, name));
           }
         }
 
-        return Option.map(Option.fromUndefinedOr(best), ({ file }) => file);
+        return files;
+      }
+    );
+
+    /** Of several copies (see `scan`), the readable one with the newest message. */
+    const newestOf = Effect.fn("newestOf")(function* newestOf(
+      files: readonly string[]
+    ) {
+      let best: { file: string; lastMessageAt: number } | undefined;
+
+      for (const file of files) {
+        // Any age: an old session opened from a link still has a Transcript.
+        const state = yield* Effect.option(readTranscript(file, 0));
+        const summary = Option.flatten(state);
+
+        if (Option.isNone(summary)) {
+          continue;
+        }
+
+        const at = Date.parse(summary.value.value.lastMessageAt ?? "");
+        const lastMessageAt = Number.isNaN(at) ? 0 : at;
+
+        if (best === undefined || lastMessageAt > best.lastMessageAt) {
+          best = { file, lastMessageAt };
+        }
+      }
+
+      return Option.map(Option.fromUndefinedOr(best), ({ file }) => file);
+    });
+
+    /**
+     * The transcript file of a session, from the last scan's listing when it
+     * has a readable copy, otherwise looked for afresh.
+     */
+    const transcriptFileOf = Effect.fn("transcriptFileOf")(
+      function* transcriptFileOf(sessionId: string) {
+        const listed = yield* newestOf(filesById.get(sessionId) ?? []);
+
+        return Option.isSome(listed)
+          ? listed
+          : yield* newestOf(yield* findTranscriptFiles(sessionId));
       }
     );
 
