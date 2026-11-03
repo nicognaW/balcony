@@ -8,7 +8,7 @@
         "@shadcn/lint": "^0.2.3",
         "oxfmt": "^0.75.0",
         "oxlint": "^1.90.0",
-        "oxlint-plugin-react-doctor": "^0.9.21",
+        "oxlint-plugin-react-doctor": "0.9.22",
         "react-doctor": "0.9.22",
         "sherif": "^1.13.0",
         "typescript": "^7.0.2",
