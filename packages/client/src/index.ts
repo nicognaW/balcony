@@ -41,6 +41,36 @@ export const rpcUrl = (server: string, token: string | null): string => {
 };
 
 /**
+ * Exchanges the short pairing code shown on the Mac for the long-lived token,
+ * over a one-off socket that closes afterwards. Fails with the contract's
+ * pairing errors (`PAIRING_CODE_WRONG`, `PAIRING_CODE_EXPIRED`,
+ * `PAIRING_CODE_LOCKED`).
+ */
+export const exchangePairingCode = async ({
+  code,
+  server,
+}: {
+  readonly code: string;
+  readonly server: string;
+}): Promise<string> => {
+  const socket = new WebSocket(rpcUrl(server, null));
+  socket.binaryType = "arraybuffer";
+
+  // No reconnect, so closing the socket ends the link.
+  const client = createORPCClient<BalconyClient>(
+    new RPCLink({ connect: () => socket })
+  );
+
+  try {
+    const { token } = await client.pairing.exchange({ code });
+
+    return token;
+  } finally {
+    socket.close();
+  }
+};
+
+/**
  * Opens a client that reconnects by itself whenever the socket drops, and
  * reports the connection state for an indicator. Calls in flight when the
  * socket drops fail; callers retry them (live queries re-subscribe).

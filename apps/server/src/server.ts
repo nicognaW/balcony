@@ -9,6 +9,8 @@ import type { Duration } from "effect";
 
 import { AgentSources } from "./agents/agent-source.ts";
 import { makeClaudeSource } from "./agents/claude/claude-source.ts";
+import { makePairingCodes, PairingCodes } from "./pairing-code.ts";
+import type { PairingCode } from "./pairing-code.ts";
 import { router } from "./rpc.ts";
 import type { RpcContext } from "./rpc.ts";
 import { Sessions } from "./sessions.ts";
@@ -24,6 +26,8 @@ export interface ServerOptions {
   readonly pollInterval?: Duration.Input;
   /** The built web app. Defaults to `apps/web/dist`. */
   readonly webRoot?: string;
+  /** The current time in epoch ms, for short pairing code expiry. Defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 export interface RunningServer {
@@ -31,6 +35,8 @@ export interface RunningServer {
   readonly origin: string;
   readonly port: number;
   readonly token: string;
+  /** Issues a short pairing code to show, replacing the previous one. */
+  readonly newPairingCode: Effect.Effect<PairingCode>;
 }
 
 const defaultWebRoot = fileURLToPath(
@@ -88,8 +94,16 @@ export const startServer = Effect.fn("startServer")(function* startServer(
     pollInterval: options.pollInterval ?? "1 second",
   });
 
+  const pairingCodes = yield* makePairingCodes({
+    now: options.now ?? Date.now,
+    token,
+  });
+
   const context = yield* Layer.build(
-    Sessions.layer.pipe(Layer.provide(Layer.succeed(AgentSources, [claude])))
+    Layer.merge(
+      Sessions.layer.pipe(Layer.provide(Layer.succeed(AgentSources, [claude]))),
+      Layer.succeed(PairingCodes, pairingCodes)
+    )
   );
 
   const handler = new RPCHandler<RpcContext>(router);
@@ -139,6 +153,7 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   const port = server.port ?? options.port;
 
   const running: RunningServer = {
+    newPairingCode: pairingCodes.issue,
     origin: `http://${options.hostname}:${port}`,
     port,
     token,

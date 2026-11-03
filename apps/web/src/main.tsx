@@ -25,7 +25,7 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <BalconyProvider fallback={NotPaired} paired={connectPaired()}>
+    <BalconyProvider fallback={NotPaired} initial={connectPaired()}>
       <RouterProvider router={router} />
     </BalconyProvider>
   </StrictMode>
