@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       screenshots_branch:
-        description: Also push the screenshots to the branch playground-screenshots/<ref>
+        description: Also push the screenshots to the branch playground-screenshots/<ref> (pushes to branches other than the default always do)
         type: boolean
         default: false
 
@@ -71,7 +71,7 @@ jobs:
     needs: apk
     runs-on: ubuntu-latest
     permissions:
-      # Only for the screenshots branch, on request.
+      # Only for the screenshots branch.
       contents: write
     timeout-minutes: 45
     steps:
@@ -103,10 +103,11 @@ jobs:
           name: balcony-playground-screenshots
           path: screenshots
           if-no-files-found: error
-      # For readers that can't download artifacts: the same files on a
-      # throwaway branch, replaced on every requested run.
+      # For readers that can't download artifacts (coding agents in sandboxes
+      # that reach github.com but not its artifact storage): the same files on
+      # a throwaway branch, replaced on every run of a working branch.
       - name: Push the screenshots to a branch
-        if: always() && inputs.screenshots_branch
+        if: always() && (inputs.screenshots_branch || (github.event_name == 'push' && github.ref_name != github.event.repository.default_branch))
         working-directory: screenshots
         env:
           BRANCH: playground-screenshots/${{ github.ref_name }}
