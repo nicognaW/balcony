@@ -1,5 +1,6 @@
 // The playground's deep link, for automation (the CI screenshots):
-// `balcony://playground?scenario=<id>&screen=<screen>&session=<id>`.
+// `balcony://playground?scenario=<id>&screen=<screen>&session=<id>`, and
+// `&swipe=<session id>:<points>` to hold that row swiped left partway.
 // Parsed by hand: React Native's URL has no working searchParams.
 import { scenarios } from "./scenarios.ts";
 import type { ScenarioId } from "./scenarios.ts";
@@ -19,7 +20,23 @@ export interface PlaygroundLink {
   readonly screen: PlaygroundScreen;
   /** For `transcript`: the session to open; the scenario's first by default. */
   readonly session: string | undefined;
+  /** For `sessions`: a row held swiped `offset` points left, as mid-swipe. */
+  readonly swipe: PlaygroundSwipe | undefined;
 }
+
+export interface PlaygroundSwipe {
+  readonly session: string;
+  readonly offset: number;
+}
+
+/** `<session id>:<points>`, or undefined when it isn't that. */
+const swipeOf = (value: string | undefined): PlaygroundSwipe | undefined => {
+  const groups = /^(?<session>.+):(?<offset>\d+)$/u.exec(value ?? "")?.groups;
+
+  return groups?.session === undefined || groups.offset === undefined
+    ? undefined
+    : { offset: Number(groups.offset), session: groups.session };
+};
 
 const PREFIX = "balcony://playground";
 
@@ -58,5 +75,10 @@ export const parsePlaygroundLink = (url: string): PlaygroundLink | null => {
     PLAYGROUND_SCREENS.find((known) => known === query.get("screen")) ??
     scenario.screen;
 
-  return { scenario: scenario.id, screen, session: query.get("session") };
+  return {
+    scenario: scenario.id,
+    screen,
+    session: query.get("session"),
+    swipe: swipeOf(query.get("swipe")),
+  };
 };

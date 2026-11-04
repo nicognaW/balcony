@@ -6,7 +6,11 @@ export type { Playground, PlaygroundOptions } from "./fake-server.ts";
 
 export { parsePlaygroundLink, PLAYGROUND_SCREENS } from "./link.ts";
 
-export type { PlaygroundLink, PlaygroundScreen } from "./link.ts";
+export type {
+  PlaygroundLink,
+  PlaygroundScreen,
+  PlaygroundSwipe,
+} from "./link.ts";
 
 export { PLAYGROUND_SERVER, scenarioOf, scenarios } from "./scenarios.ts";
 

@@ -25,6 +25,14 @@ export type {
   SessionRow,
 } from "./session-list.ts";
 
+export {
+  settleDistance,
+  SWIPE_LOCK_DISTANCE,
+  swipeArmed,
+  swipeAxis,
+  swipeOffset,
+} from "./swipe.ts";
+
 export { formatRelativeTime, formatWorkingDuration } from "./time.ts";
 
 export { keepViewing } from "./viewing.ts";

@@ -19,6 +19,7 @@ import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 
+import { HeldSwipe } from "../components/held-swipe.ts";
 import { Icon } from "../components/icon.tsx";
 import { PairedApp } from "../paired-app.tsx";
 import { PairScreen } from "../screens/pair-screen.tsx";
@@ -362,7 +363,9 @@ export const PlaygroundApp = ({
           {pairing === null ? (
             <QueryClientProvider client={queryClient}>
               <PairedContext value={paired}>
-                <PairedApp initialState={run.initialState} />
+                <HeldSwipe value={run.swipe}>
+                  <PairedApp initialState={run.initialState} />
+                </HeldSwipe>
               </PairedContext>
             </QueryClientProvider>
           ) : (

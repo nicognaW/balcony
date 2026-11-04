@@ -99,6 +99,27 @@ long_press() {
   fi
 }
 
+# Drags the view labelled $1 left by $2 pixels with one finger, from near
+# the row's right side, and saves screenshot $3 while the finger is still
+# down, then lifts it.
+finger_swipe() {
+  local point x y step
+  point=$(find_view "$1")
+  if [ -z "$point" ]; then
+    return 0
+  fi
+  read -r x y <<<"$point"
+  x=$((x + 300))
+  adb shell input motionevent DOWN "$x" "$y"
+  for step in 1 2 3 4 5 6 7 8; do
+    adb shell input motionevent MOVE $((x - $2 * step / 8)) "$y"
+  done
+  sleep 0.5
+  shot "$3"
+  adb shell input motionevent UP $((x - $2)) "$y"
+  sleep 1
+}
+
 scroll_to_end() {
   for _ in 1 2 3 4 5 6; do
     adb shell input swipe 540 1800 540 400 150
@@ -131,6 +152,33 @@ pass() {
 
   open_link "scenario=busy-day&screen=sessions"
   shot "busy-day-sessions$suffix"
+
+  # Swipe to settle, held by the playground: short of the threshold, then
+  # past it (in colour).
+  open_link "scenario=busy-day&screen=sessions&swipe=pg-ci:90"
+  shot "busy-day-swipe-short$suffix"
+  open_link "scenario=busy-day&screen=sessions&swipe=pg-ci:240"
+  shot "busy-day-swipe-armed$suffix"
+
+  # And by a finger: released short it springs back; released past it, the
+  # row settles and the Undo notice shows. Animations off, as above (Working
+  # spinner); the row follows the finger all the same.
+  adb shell settings put global animator_duration_scale 0
+  adb shell settings put global transition_animation_scale 0
+  adb shell am force-stop "$package"
+  open_link "scenario=busy-day&screen=sessions"
+  finger_swipe "Review PR #482: rate limiting per token" 200 \
+    "busy-day-finger-swipe-short$suffix"
+  shot "busy-day-finger-released-short$suffix"
+  finger_swipe "Review PR #482: rate limiting per token" 640 \
+    "busy-day-finger-swipe-armed$suffix"
+  # Undo isn't tapped here: the notice lasts 5s, less than uiautomator
+  # takes on the emulator to find it.
+  shot "busy-day-finger-settled-undo$suffix"
+  adb shell settings put global animator_duration_scale 1
+  adb shell settings put global transition_animation_scale 1
+  adb shell am force-stop "$package"
+
   open_link "scenario=busy-day&screen=transcript&session=pg-auth" 7
   shot "busy-day-transcript-working$suffix"
   open_link "scenario=busy-day&screen=transcript&session=pg-ci"
@@ -239,6 +287,8 @@ open_link "scenario=edge-cases&screen=panel"
 shot "narrow-edge-cases-panel"
 open_link "scenario=busy-day&screen=sessions"
 shot "narrow-busy-day-sessions"
+open_link "scenario=busy-day&screen=sessions&swipe=pg-ci:200"
+shot "narrow-busy-day-swipe-armed"
 adb shell settings put system font_scale 1.0
 adb shell wm density "$density"
 
