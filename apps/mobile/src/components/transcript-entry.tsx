@@ -62,14 +62,15 @@ const FileRow = ({ path }: { readonly path: string }) => {
         <Icon icon={SquarePenIcon} size={14} />
       </View>
       <View className="min-w-0 flex-1 flex-row items-baseline">
-        <View className="max-w-full shrink-0 flex-row">
-          <Text className="text-foreground shrink text-sm" numberOfLines={1}>
-            {nameStart}
-          </Text>
-          <Text className="text-foreground text-sm" numberOfLines={1}>
-            {nameEnd}
-          </Text>
-        </View>
+        {/* One Text cut by Android itself: a start Text that shrinks leaves
+            a gap before the end, as its ellipsis doesn't fill the width. */}
+        <Text
+          className="text-foreground max-w-full shrink-0 text-sm"
+          ellipsizeMode="middle"
+          numberOfLines={1}
+        >
+          {`${nameStart}${nameEnd}`}
+        </Text>
         {folder === undefined ? null : (
           <Text
             className="text-muted-foreground flex-1 text-xs"

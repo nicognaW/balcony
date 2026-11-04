@@ -23,14 +23,14 @@ describe("a wrong pairing code", () => {
     };
 
     expect(await tryWrongCode()).toBe(
-      "That isn't the code on your Mac. Check it and try again (4 tries left)."
+      "That isn't the code on your Mac. Check it and try again (4\u00A0tries\u00A0left)."
     );
     expect(await tryWrongCode()).toBe(
-      "That isn't the code on your Mac. Check it and try again (3 tries left)."
+      "That isn't the code on your Mac. Check it and try again (3\u00A0tries\u00A0left)."
     );
     await tryWrongCode();
     expect(await tryWrongCode()).toBe(
-      "That isn't the code on your Mac. Check it and try again (1 try left)."
+      "That isn't the code on your Mac. Check it and try again (1\u00A0try\u00A0left)."
     );
     expect(await tryWrongCode()).toBe(
       "Too many wrong tries. Press Enter in the terminal running balcony for a new one."

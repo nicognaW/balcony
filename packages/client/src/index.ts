@@ -185,7 +185,8 @@ export const pairingRefusalMessage = (refused: PairingRefused): string => {
     case "wrong": {
       const tries = refused.attemptsLeft === 1 ? "try" : "tries";
 
-      return `That isn't the code on your Mac. Check it and try again (${refused.attemptsLeft} ${tries} left).`;
+      // No-break spaces keep "(4 tries left)" on one line.
+      return `That isn't the code on your Mac. Check it and try again (${refused.attemptsLeft} ${tries} left).`;
     }
 
     case "expired": {
