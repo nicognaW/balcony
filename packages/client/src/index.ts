@@ -27,6 +27,8 @@ export type {
 
 export { formatRelativeTime, formatWorkingDuration } from "./time.ts";
 
+export { keepViewing } from "./viewing.ts";
+
 /**
  * connecting: no socket has opened yet. connected: a socket is open.
  * reconnecting: the socket closed and the link is trying again.

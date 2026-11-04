@@ -79,6 +79,11 @@ export interface TranscriptSummary {
   readonly turnEndedAt: string | undefined;
   /** Whether a turn has begun and not ended. */
   readonly inTurn: boolean;
+  /**
+   * When the agent wrote the newest user or agent line, if that line left the
+   * turn open: a reply cut off mid-stream or a tool call with no result yet.
+   */
+  readonly unfinishedAgentLineAt: string | undefined;
   /** The agent message that ended the last turn; its later lines don't start one. */
   readonly endingMessageId: string | undefined;
 }
@@ -96,6 +101,7 @@ export const emptySummary: TranscriptSummary = {
   summary: undefined,
   turnEndedAt: undefined,
   turnStartedAt: undefined,
+  unfinishedAgentLineAt: undefined,
 };
 
 const MAX_TITLE = 200;
@@ -276,11 +282,15 @@ const foldMessage = (
     return titled;
   }
 
+  const turn = turnAfter(titled, line, at);
+
   return {
     ...titled,
-    ...turnAfter(titled, line, at),
+    ...turn,
     lastMessageAt: newest(summary.lastMessageAt, at),
     lastUserMessageAt: prompt === undefined ? summary.lastUserMessageAt : at,
+    unfinishedAgentLineAt:
+      line.type === "assistant" && turn.inTurn ? at : undefined,
   };
 };
 
@@ -303,7 +313,13 @@ const foldTranscriptLine = (
       const at = line.timestamp;
 
       return line.attachment?.type === "queued_command" && at !== undefined
-        ? { ...summary, ...startTurn(summary, at), branch, cwd }
+        ? {
+            ...summary,
+            ...startTurn(summary, at),
+            branch,
+            cwd,
+            unfinishedAgentLineAt: undefined,
+          }
         : { ...summary, branch, cwd };
     }
 
@@ -348,11 +364,34 @@ export const titleOf = (summary: TranscriptSummary): string =>
   "Untitled session";
 
 /**
- * Working or Waiting as the transcript tells it: Working while the latest
- * turn hasn't ended. Used when Claude's status file can't be trusted.
+ * How long an unfinished reply or tool call may sit as the Transcript's last
+ * line before the agent is taken to have crashed. Claude writes nothing while
+ * a tool runs, so a command or foreground subagent that runs longer than this
+ * shows Waiting too, when there is no status file to say otherwise.
  */
-export const statusOf = (summary: TranscriptSummary): SessionStatus =>
-  summary.inTurn ? "working" : "waiting";
+export const CRASHED_AFTER_MS = 5 * 60 * 1000;
+
+/**
+ * Working or Waiting as the transcript tells it at `now` (epoch ms): Working
+ * while the latest turn hasn't ended, unless it stopped on an unfinished agent
+ * line that is older than {@link CRASHED_AFTER_MS}. Used when Claude's status
+ * file can't be trusted.
+ */
+export const statusOf = (
+  summary: TranscriptSummary,
+  now: number
+): SessionStatus => {
+  if (!summary.inTurn) {
+    return "waiting";
+  }
+
+  const stalledAt = summary.unfinishedAgentLineAt;
+
+  return stalledAt !== undefined &&
+    now - Date.parse(stalledAt) > CRASHED_AFTER_MS
+    ? "waiting"
+    : "working";
+};
 
 /** Claude records a detached checkout, or no repository, as `HEAD`. */
 const NO_BRANCH = new Set(["", "HEAD"]);

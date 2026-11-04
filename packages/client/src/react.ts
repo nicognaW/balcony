@@ -22,6 +22,7 @@ import {
   connect,
   createSessionList,
   isUnauthorized,
+  keepViewing,
   redeemPairingCode,
 } from "./index.ts";
 import type {
@@ -209,21 +210,23 @@ export const useSettle = (client: BalconyClient) =>
   });
 
 /**
- * Marks the session viewed when its Transcript opens and again when it
- * closes, so a turn the user watched finish never shows as Done.
+ * Holds the session open on the server while its Transcript is `visible`
+ * (web: the page is visible; Android: the app is active). It is marked
+ * viewed when it shows and when it hides, and a turn that ends meanwhile
+ * never shows as Done on another client.
  */
-export const useMarkViewed = (client: BalconyClient, id: string) => {
+export const useViewing = (
+  client: BalconyClient,
+  id: string,
+  visible: boolean
+) => {
   useEffect(() => {
-    const mark = () => {
-      client.sessions.markViewed({ id }).catch(() => {
-        // Offline: the next open marks it again.
-      });
-    };
+    if (!visible) {
+      return;
+    }
 
-    mark();
-
-    return mark;
-  }, [client, id]);
+    return keepViewing(client, id);
+  }, [client, id, visible]);
 };
 
 /**

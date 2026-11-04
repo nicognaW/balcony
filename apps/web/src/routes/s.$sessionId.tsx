@@ -3,12 +3,12 @@
 // View-only, so there is no message box.
 import { formatWorkingDuration } from "@balcony/client";
 import {
-  useMarkViewed,
   useNow,
   usePaired,
   useSession,
   useTranscript,
   useUnpairWhenRefused,
+  useViewing,
 } from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
 import { createFileRoute, useParams } from "@tanstack/react-router";
@@ -16,6 +16,7 @@ import { CircleDashedIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { TranscriptEntryRow } from "@/components/transcript/transcript-entry.tsx";
+import { usePageVisible } from "@/lib/page-visible.ts";
 
 /** The class for each `spaceAbove`. */
 const SPACE_ABOVE = { loose: "mt-4", none: "", tight: "mt-0.5" } as const;
@@ -86,8 +87,9 @@ const WorkingLine = ({ since }: { readonly since: string | null }) => {
 const TranscriptScreen = () => {
   const { sessionId } = useParams({ from: "/s/$sessionId" });
   const { connection, orpc } = usePaired();
-  // Opening the session clears Done on every client.
-  useMarkViewed(connection.client, sessionId);
+  // Opening the session clears Done on every client, and turns that end
+  // while the page is visible never show as Done.
+  useViewing(connection.client, sessionId, usePageVisible());
 
   const {
     arrivedLive,

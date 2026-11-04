@@ -3,7 +3,7 @@
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createSessionList } from "@balcony/client";
+import { createSessionList, keepViewing } from "@balcony/client";
 import type { SessionListView } from "@balcony/client";
 import type { SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
@@ -33,6 +33,23 @@ const sessionId = (name: string): string => {
   return id;
 };
 
+/** The fields of a Claude Transcript line that these tests write. */
+interface ClaudeLine {
+  readonly cwd: string;
+  readonly sessionId: string;
+  readonly message: {
+    readonly content: string | readonly { text: string; type: "text" }[];
+    readonly id?: string;
+    readonly role: "user" | "assistant";
+    readonly stop_reason?: string;
+  };
+  readonly origin?: { readonly kind: string };
+  readonly timestamp: string;
+  readonly type: "user" | "assistant";
+  readonly uuid: string;
+}
+
+const long = sessionId("long");
 const tools = sessionId("tools");
 const waiting = sessionId("waiting");
 const working = sessionId("working");
@@ -161,6 +178,101 @@ describe("the web app and the Android app", () => {
 
         yield* call(() => web.client.sessions.unsettle({ id: waiting }));
         yield* phone.sees(waiting, { mark: "time", section: "main" });
+      })
+    );
+  });
+});
+
+describe("a turn that ends while the session is open", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("never shows as Done on another client", () =>
+      Effect.gen(function* viewedWhileOpen() {
+        const { claude, clock, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
+
+        // A fresh list model for each list, so no Working grace hides Done.
+        const markOf = (list: SessionList) =>
+          placeOf(
+            createSessionList().update(list.sessions, clock.now).view,
+            long
+          )?.mark;
+
+        // Every list the web app is sent, until `until` passes; none may
+        // show the open session as Done.
+        const shownDone: SessionList[] = [];
+
+        const receive = (until: (list: SessionList) => boolean) =>
+          watch.next((list) => {
+            if (markOf(list) === "done") {
+              shownDone.push(list);
+            }
+
+            return until(list);
+          });
+
+        // The phone opens the session.
+        const phone = yield* clientOf(server.token);
+        const stopViewing = keepViewing(phone, long);
+        yield* receive(
+          (list) => find(list, long)?.lastViewedAt === fixtureNowIso
+        );
+
+        const transcript = path.join(
+          claude,
+          "projects",
+          "-Users-nico-code-notes-site",
+          `${long}.jsonl`
+        );
+
+        const append = (line: ClaudeLine) =>
+          Effect.promise(() =>
+            appendFile(transcript, `${JSON.stringify(line)}\n`)
+          );
+
+        const envelope = {
+          cwd: "/Users/nico/code/notes.site",
+          sessionId: long,
+        };
+
+        yield* append({
+          ...envelope,
+          message: { content: "Now tidy post 20.", role: "user" },
+          origin: { kind: "human" },
+          timestamp: "2026-01-15T12:00:01.000Z",
+          type: "user",
+          uuid: "0d8a7a52-0000-4000-8000-000000000003",
+        });
+        yield* receive((list) => find(list, long)?.status === "working");
+
+        yield* append({
+          ...envelope,
+          message: {
+            content: [{ text: "Post 20 is tidy.", type: "text" }],
+            id: "msg_0000000000000000000000f6",
+            role: "assistant",
+            stop_reason: "end_turn",
+          },
+          timestamp: "2026-01-15T12:00:09.000Z",
+          type: "assistant",
+          uuid: "0d8a7a52-0000-4000-8000-000000000004",
+        });
+        yield* receive(
+          (list) =>
+            find(list, long)?.turnEndedAt === "2026-01-15T12:00:09.000Z" &&
+            find(list, long)?.status === "waiting"
+        );
+
+        // The phone closes it (or goes to the background) a minute later.
+        clock.now = Date.parse("2026-01-15T12:01:00.000Z");
+        stopViewing();
+
+        const closed = yield* receive(
+          (list) =>
+            find(list, long)?.lastViewedAt === "2026-01-15T12:01:00.000Z"
+        );
+
+        expect(markOf(closed)).toBe("time");
+        expect(shownDone).toEqual([]);
       })
     );
   });
