@@ -275,6 +275,24 @@ export const createPlayground = ({
             unsettledAt: iso(),
           }));
         }),
+      // Marked viewed when opened and when closed; unlike the server, turns
+      // that end in between aren't kept viewed.
+      view: os.sessions.view
+        .use(opened)
+        .use(accepted)
+        // oxlint-disable-next-line require-yield -- it sends nothing
+        .handler(async function* viewSession({ input, signal }) {
+          const markViewed = () =>
+            update(input.id, (target) => ({ ...target, lastViewedAt: iso() }));
+
+          markViewed();
+
+          try {
+            await until(() => closed, subscribe, signal);
+          } finally {
+            markViewed();
+          }
+        }),
       watch: os.sessions.watch
         .use(opened)
         .use(accepted)
