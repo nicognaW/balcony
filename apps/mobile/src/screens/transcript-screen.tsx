@@ -4,12 +4,12 @@
 // entries arrive. Sessions are View-only, so there is no message box.
 import { formatWorkingDuration } from "@balcony/client";
 import {
-  useMarkViewed,
   useNow,
   usePaired,
   useSession,
   useTranscript,
   useUnpairWhenRefused,
+  useViewing,
 } from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
 import { CircleDashedIcon } from "lucide-react-native";
@@ -18,6 +18,7 @@ import { FlatList, Pressable, Text, View } from "react-native";
 import { Icon } from "../components/icon.tsx";
 import { FadeIn, Spin } from "../components/motion.tsx";
 import { TranscriptEntryRow } from "../components/transcript-entry.tsx";
+import { useAppActive } from "../lib/app-active.ts";
 import type { ScreenProps } from "../navigation.ts";
 
 /** The class for each `spaceAbove`. */
@@ -108,7 +109,9 @@ const FullTitle = ({
 
 const TranscriptBody = ({ sessionId }: { readonly sessionId: string }) => {
   const { connection, orpc } = usePaired();
-  useMarkViewed(connection.client, sessionId);
+  // Viewed while on screen: going to the background marks it once more,
+  // and coming back marks it again.
+  useViewing(connection.client, sessionId, useAppActive());
 
   const {
     arrivedLive,
