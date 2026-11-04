@@ -126,13 +126,22 @@ export const contract = {
   sessions: {
     /**
      * Records that the user opened the session now, which clears Done on
-     * every client. Call it on opening a session and while it stays open.
+     * every client.
      */
     markViewed: oc.input(std(SessionRef)),
     /** Moves the session to Settled until it has new activity. Claude is not told. */
     settle: oc.input(std(SessionRef)),
     /** Moves a Settled session back to the main list. */
     unsettle: oc.input(std(SessionRef)),
+    /**
+     * Holds the session open for as long as the call runs (it sends
+     * nothing): it is marked viewed when the call starts and when it ends,
+     * and every turn that ends meanwhile counts as viewed at once, so no
+     * client shows it as Done. Run it while the Transcript is on screen.
+     */
+    view: oc
+      .input(std(SessionRef))
+      .output(asyncIteratorObject(std(Schema.Never))),
     /** The current session list, then a new list on every change. */
     watch: oc.output(asyncIteratorObject(std(SessionList))),
   },
