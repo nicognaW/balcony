@@ -2,5 +2,33 @@
   "name": "@balcony/client",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server-address": "./src/server-address.ts",
+    "./transcript": "./src/transcript.ts",
+    "./react": "./src/react.ts",
+    "./playground": "./src/playground/index.ts"
+  },
+  "scripts": {
+    "test": "bun --bun vitest run"
+  },
+  "dependencies": {
+    "@balcony/contracts": "workspace:*",
+    "@orpc/client": "2.0.0-beta.48",
+    "@orpc/server": "2.0.0-beta.48",
+    "@orpc/tanstack-query": "2.0.0-beta.48"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "@tanstack/react-query": "5.105.3",
+    "@types/react": "^19.3.0",
+    "effect": "4.1.2",
+    "react": "^19.3.1",
+    "vitest": "5.1.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "5.105.3",
+    "react": "^19.3.1"
+  }
 }

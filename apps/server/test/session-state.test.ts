@@ -1,0 +1,270 @@
+// Seam A: what the user has seen and dealt with (Done, Settled), kept on the
+// Mac and shared live by every client.
+import { appendFile } from "node:fs/promises";
+import path from "node:path";
+
+import { createSessionList } from "@balcony/client";
+import type { SessionListView } from "@balcony/client";
+import type { SessionList } from "@balcony/contracts";
+import { BunServices } from "@effect/platform-bun";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect } from "effect";
+
+import { startServer } from "../src/server.ts";
+import { fixtureNow, fixtureSessions } from "./fixture-home.ts";
+import {
+  call,
+  clientOf,
+  find,
+  Fixture,
+  snapshotFiles,
+  watchSessions,
+} from "./fixture-server.ts";
+
+const fixtureNowIso = "2026-01-15T12:00:00.000Z";
+
+const sessionId = (name: string): string => {
+  const id = fixtureSessions[name];
+
+  if (id === undefined) {
+    throw new Error(`No fixture session ${name}`);
+  }
+
+  return id;
+};
+
+const tools = sessionId("tools");
+const waiting = sessionId("waiting");
+const working = sessionId("working");
+
+describe("Done and Settled over the oRPC WebSocket", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "opening a session on one client marks it viewed on every client",
+      () =>
+        Effect.gen(function* marksViewed() {
+          const { server } = yield* Fixture;
+          const other = yield* watchSessions(server.token);
+          const before = yield* other.next();
+          expect(find(before, waiting)?.lastViewedAt).toBeNull();
+
+          const phone = yield* clientOf(server.token);
+          yield* call(() => phone.sessions.markViewed({ id: waiting }));
+
+          const after = yield* other.next(
+            (list) => find(list, waiting)?.lastViewedAt !== null
+          );
+
+          expect(find(after, waiting)?.lastViewedAt).toBe(fixtureNowIso);
+        })
+    );
+
+    test.effect(
+      "settles and un-settles a session by hand, on every client",
+      () =>
+        Effect.gen(function* settlesByHand() {
+          const { clock, server } = yield* Fixture;
+          const other = yield* watchSessions(server.token);
+          const before = yield* other.next();
+          expect(find(before, tools)).toMatchObject({
+            settledAt: null,
+            unsettledAt: null,
+          });
+
+          const phone = yield* clientOf(server.token);
+          yield* call(() => phone.sessions.settle({ id: tools }));
+
+          const settled = yield* other.next(
+            (list) => find(list, tools)?.settledAt !== null
+          );
+
+          expect(find(settled, tools)?.settledAt).toBe(fixtureNowIso);
+
+          clock.now = Date.parse("2026-01-15T12:05:00.000Z");
+          yield* call(() => phone.sessions.unsettle({ id: tools }));
+
+          const unsettled = yield* other.next(
+            (list) => find(list, tools)?.settledAt === null
+          );
+
+          expect(find(unsettled, tools)?.unsettledAt).toBe(
+            "2026-01-15T12:05:00.000Z"
+          );
+        })
+    );
+  });
+});
+
+interface Place {
+  readonly section: "working" | "main" | "settled";
+  readonly mark: "working" | "done" | "time";
+}
+
+/** Where a session shows in a client's list. */
+const placeOf = (view: SessionListView, id: string): Place | undefined => {
+  for (const section of ["working", "main", "settled"] as const) {
+    const row = view[section].find((candidate) => candidate.id === id);
+
+    if (row !== undefined) {
+      return { mark: row.mark.kind, section };
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * A client that watches the list and lays it out with the shared view model,
+ * as the web and Android apps do.
+ */
+const listClient = Effect.fn("listClient")(function* listClient(token: string) {
+  const { clock } = yield* Fixture;
+  const watch = yield* watchSessions(token);
+  const model = createSessionList();
+
+  const viewOf = (list: SessionList) =>
+    model.update(list.sessions, clock.now).view;
+
+  /** Waits for a list in which session `id` shows at `place`. */
+  const sees = (id: string, place: Place) =>
+    watch.next((list) => {
+      const shown = placeOf(viewOf(list), id);
+
+      return shown?.section === place.section && shown.mark === place.mark;
+    });
+
+  return { client: yield* clientOf(token), sees };
+});
+
+describe("the web app and the Android app", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("see each other's Done and Settled changes live", () =>
+      Effect.gen(function* stayInSync() {
+        const { clock, server } = yield* Fixture;
+        const web = yield* listClient(server.token);
+        const phone = yield* listClient(server.token);
+
+        // The phone opened the session before its last turn ended.
+        clock.now = Date.parse("2026-01-15T08:00:00.000Z");
+        yield* call(() => phone.client.sessions.markViewed({ id: waiting }));
+        yield* web.sees(waiting, { mark: "done", section: "main" });
+        yield* phone.sees(waiting, { mark: "done", section: "main" });
+
+        // Opening it in the browser clears Done on the phone.
+        clock.now = fixtureNow;
+        yield* call(() => web.client.sessions.markViewed({ id: waiting }));
+        yield* phone.sees(waiting, { mark: "time", section: "main" });
+
+        // Settled on the phone, un-settled in the browser.
+        yield* call(() => phone.client.sessions.settle({ id: waiting }));
+        yield* web.sees(waiting, { mark: "time", section: "settled" });
+
+        yield* call(() => web.client.sessions.unsettle({ id: waiting }));
+        yield* phone.sees(waiting, { mark: "time", section: "main" });
+      })
+    );
+  });
+});
+
+describe("new activity after settling", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("un-settles the session by itself", () =>
+      Effect.gen(function* autoUnsettles() {
+        const { claude, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
+        yield* watch.next();
+
+        const phone = yield* clientOf(server.token);
+        yield* call(() => phone.sessions.settle({ id: waiting }));
+        yield* watch.next((list) => find(list, waiting)?.settledAt !== null);
+
+        const line = {
+          cwd: "/Users/nico/code/shop-api",
+          gitBranch: "feature/rate-limit",
+          message: { content: "And when Redis comes back?", role: "user" },
+          origin: { kind: "human" },
+          sessionId: waiting,
+          timestamp: "2026-01-15T12:00:30.000Z",
+          type: "user",
+          uuid: "0d8a7a52-0000-4000-8000-000000000003",
+        };
+
+        yield* Effect.promise(() =>
+          appendFile(
+            path.join(
+              claude,
+              "projects",
+              "-Users-nico-code-shop-api",
+              `${waiting}.jsonl`
+            ),
+            `${JSON.stringify(line)}\n`
+          )
+        );
+
+        const active = yield* watch.next(
+          (list) =>
+            find(list, waiting)?.lastMessageAt === "2026-01-15T12:00:30.000Z"
+        );
+
+        expect(find(active, waiting)?.settledAt).toBeNull();
+      })
+    );
+  });
+});
+
+describe("Balcony's state on the Mac", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("survives a restart", () =>
+      Effect.gen(function* survivesRestart() {
+        const { home, server } = yield* Fixture;
+        const phone = yield* clientOf(server.token);
+        yield* call(() => phone.sessions.markViewed({ id: working }));
+        yield* call(() => phone.sessions.settle({ id: tools }));
+
+        const restarted = yield* startServer({
+          home,
+          hostname: "127.0.0.1",
+          now: () => fixtureNow,
+          port: 0,
+        }).pipe(Effect.provide(BunServices.layer));
+
+        const list = yield* (yield* watchSessions(
+          server.token,
+          restarted.origin
+        )).next();
+
+        expect(find(list, working)?.lastViewedAt).toBe(fixtureNowIso);
+        expect(find(list, tools)?.settledAt).toBe(fixtureNowIso);
+      })
+    );
+
+    test.effect("is never written to Claude's files", () =>
+      Effect.gen(function* leavesClaudeAlone() {
+        const { claude, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
+        yield* watch.next();
+        const before = yield* snapshotFiles(claude);
+
+        const phone = yield* clientOf(server.token);
+        yield* call(() => phone.sessions.markViewed({ id: waiting }));
+        yield* call(() => phone.sessions.settle({ id: waiting }));
+        yield* call(() => phone.sessions.unsettle({ id: waiting }));
+        yield* watch.next((list) => find(list, waiting)?.unsettledAt !== null);
+
+        expect(yield* snapshotFiles(claude)).toEqual(before);
+      })
+    );
+
+    test.effect("rejects changes without the token", () =>
+      Effect.gen(function* rejectsWithoutToken() {
+        const phone = yield* clientOf("not-the-token");
+
+        const refused = yield* Effect.flip(
+          call(() => phone.sessions.settle({ id: waiting }))
+        );
+
+        expect(refused).toMatchObject({ code: "UNAUTHORIZED" });
+      })
+    );
+  });
+});

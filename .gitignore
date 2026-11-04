@@ -1,3 +1,9 @@
 node_modules/
 *.log
 .claude/worktrees/
+dist/
+
+# Expo: generated native projects and caches
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/

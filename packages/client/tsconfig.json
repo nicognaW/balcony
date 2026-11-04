@@ -1,7 +1,10 @@
 {
+  // The client runs in browsers, React Native and Bun; all of them have a
+  // global WebSocket, typed here by DOM, and ES2022: the Android app's
+  // Hermes has no ES2023 array methods (toSorted, toReversed, findLast).
   "extends": "../../tsconfig.json",
-  "include": ["**/*"],
-  // tsc doesn't report "no inputs" (TS18003) for a config with references,
-  // so the package passes while it has no source files.
-  "references": []
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["**/*"]
 }
