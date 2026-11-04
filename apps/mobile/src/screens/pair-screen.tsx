@@ -23,7 +23,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 
-import { pairByCode, pairWith } from "../lib/connection.ts";
+import type { SavedServer } from "../lib/saved-server.ts";
 
 const CODE_MESSAGES: Record<PairingRefusal | "not-saved", string> = {
   expired:
@@ -46,7 +46,23 @@ const ADDRESS_MESSAGES: Record<AddressRefusal | "no-token", string> = {
     "Balcony only connects to Macs on your local network, without encryption. Use the Mac's LAN address.",
 };
 
+/** How the screen pairs: with the real server, or the playground's. */
+export interface Pairing {
+  /** Keeps the server and token a QR code carried, and connects. */
+  readonly withQr: (scanned: SavedServer) => Promise<PairedConnection>;
+  /** Exchanges the short code for the token, keeps both, and connects. */
+  readonly withCode: (
+    server: string,
+    code: string
+  ) => Promise<
+    { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
+  >;
+}
+
 export interface PairScreenProps {
+  readonly pairing: Pairing;
+  /** Long-pressing the title opens the playground. */
+  readonly onTitleLongPress?: () => void;
   /** The address last paired with, to start from. */
   readonly lastServer: string | null;
   /** The server refused the pairing this phone had. */
@@ -138,6 +154,8 @@ const Scanner = ({
 export const PairScreen = ({
   lastServer,
   onPaired,
+  onTitleLongPress,
+  pairing,
   refused,
 }: PairScreenProps) => {
   const [address, setAddress] = useState(
@@ -170,7 +188,7 @@ export const PairScreen = ({
 
     setBusy(true);
     setMessage(null);
-    const paired = await pairWith(scanned).catch(() => null);
+    const paired = await pairing.withQr(scanned).catch(() => null);
 
     if (paired === null) {
       setBusy(false);
@@ -196,7 +214,7 @@ export const PairScreen = ({
     setBusy(true);
     setMessage(null);
 
-    const result = await pairByCode(parsed.server, code).catch(() => ({
+    const result = await pairing.withCode(parsed.server, code).catch(() => ({
       refusal: "not-saved" as const,
     }));
 
@@ -218,7 +236,11 @@ export const PairScreen = ({
           keyboardShouldPersistTaps="handled"
         >
           <View className="gap-1">
-            <Text className="text-foreground text-2xl font-semibold">
+            <Text
+              accessibilityRole="header"
+              className="text-foreground text-2xl font-semibold"
+              onLongPress={onTitleLongPress}
+            >
               Pair with your Mac
             </Text>
             <Text className="text-muted-foreground text-sm">

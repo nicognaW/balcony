@@ -12,6 +12,7 @@ import {
 import { Pressable, Text, View } from "react-native";
 
 import { Icon } from "./icon.tsx";
+import { Spin } from "./motion.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);
@@ -50,7 +51,9 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
     default: {
       return (
         <View className="flex-row items-center gap-1">
-          <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
+          <Spin>
+            <Icon icon={CircleDashedIcon} size={14} tone="info-foreground" />
+          </Spin>
           <Text className="text-info-foreground text-xs font-medium tabular-nums">
             Working
             {mark.since === null ? null : (
@@ -63,6 +66,9 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
   }
 };
 
+const settleLabel = (row: Row) =>
+  row.session.settledAt === null ? "Settle" : "Un-settle";
+
 /** Settles the session, or un-settles it when it is Settled. */
 const SettleButton = ({ row }: { readonly row: Row }) => {
   const settle = useSettle(usePaired().connection.client);
@@ -70,7 +76,7 @@ const SettleButton = ({ row }: { readonly row: Row }) => {
 
   return (
     <Pressable
-      accessibilityLabel={`${settled ? "Un-settle" : "Settle"} ${row.title}`}
+      accessibilityLabel={`${settleLabel(row)} ${row.title}`}
       accessibilityRole="button"
       className="absolute right-1.5 bottom-1 rounded px-1.5 py-1 active:opacity-60 disabled:opacity-60"
       disabled={settle.isPending}
@@ -78,14 +84,16 @@ const SettleButton = ({ row }: { readonly row: Row }) => {
       onPress={() => settle.mutate({ id: row.id, settled: !settled })}
     >
       <Text className="text-muted-foreground text-xs font-medium">
-        {settled ? "Un-settle" : "Settle"}
+        {settleLabel(row)}
       </Text>
     </Pressable>
   );
 };
 
 // The Settle button sits over the card rather than inside it, so the two
-// stay separate controls.
+// stay separate controls. The branch line keeps room for it with an
+// invisible copy of its label, so neither covers the other at any text size,
+// and the card grows with large text rather than clipping it.
 export const SessionRow = ({
   onPress,
   row,
@@ -97,7 +105,7 @@ export const SessionRow = ({
     <Pressable
       accessibilityHint="Opens the Transcript"
       accessibilityRole="button"
-      className="bg-card border-border active:bg-accent h-[78px] rounded-xl border px-3 py-2"
+      className="bg-card border-border active:bg-accent min-h-[78px] rounded-xl border px-3 py-2"
       onPress={onPress}
     >
       <View className="flex-row items-center gap-1.5">
@@ -112,17 +120,22 @@ export const SessionRow = ({
       <Text className="text-foreground mt-1 text-sm" numberOfLines={1}>
         {row.title}
       </Text>
-      {row.branch === null ? null : (
-        <View className="mt-0.5 flex-row items-center gap-1 pr-16">
-          <Icon icon={GitBranchIcon} size={12} />
-          <Text
-            className="text-muted-foreground min-w-0 flex-1 text-xs"
-            numberOfLines={1}
-          >
-            {row.branch}
-          </Text>
-        </View>
-      )}
+      <View className="mt-0.5 flex-row items-center gap-1">
+        {row.branch === null ? null : <Icon icon={GitBranchIcon} size={12} />}
+        <Text
+          className="text-muted-foreground min-w-0 flex-1 text-xs"
+          numberOfLines={1}
+        >
+          {row.branch ?? ""}
+        </Text>
+        <Text
+          aria-hidden
+          className="px-1.5 text-xs font-medium opacity-0"
+          importantForAccessibility="no-hide-descendants"
+        >
+          {settleLabel(row)}
+        </Text>
+      </View>
     </Pressable>
     <SettleButton row={row} />
   </View>

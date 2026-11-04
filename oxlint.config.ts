@@ -25,6 +25,12 @@ const root = defineConfig({
     // (`const Session = Schema.Struct(…)` + `type Session = …`). TypeScript
     // already rejects real redeclarations.
     "no-redeclare": "off",
+    // They ask for toSorted/toReversed, which the Android app's Hermes
+    // doesn't have (it throws "undefined is not a function"); sort and
+    // reverse a copy instead. The client and mobile tsconfigs stop at
+    // ES2022 so tsc rejects the ES2023 methods.
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-array-sort": "off",
   },
 });
 

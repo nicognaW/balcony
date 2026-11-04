@@ -1,12 +1,12 @@
 {
-  // ES2023 for @balcony/client (toSorted; Hermes since React Native 0.74).
+  // ES2022 for @balcony/client: Hermes has no ES2023 array methods (toSorted).
   // DOM types the client's WebSocket and URL as the browser has them (Expo's
   // own base config does the same); React Native's types come with the
   // react-native package. `react-native` resolves packages to their React
   // Native builds, as Metro does.
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM"],
+    "lib": ["ES2022", "DOM"],
     "jsx": "react-jsx",
     "customConditions": ["react-native"]
   },

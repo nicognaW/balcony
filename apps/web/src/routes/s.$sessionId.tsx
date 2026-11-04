@@ -1,14 +1,18 @@
 // A session's Transcript, full screen. It opens on the newest entries, pages
 // back with "Load earlier" and follows new entries live. Sessions are
 // View-only, so there is no message box.
+import { formatWorkingDuration } from "@balcony/client";
 import {
   useMarkViewed,
+  useNow,
   usePaired,
+  useSession,
   useTranscript,
   useUnpairWhenRefused,
 } from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
 import { createFileRoute, useParams } from "@tanstack/react-router";
+import { CircleDashedIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { TranscriptEntryRow } from "@/components/transcript/transcript-entry.tsx";
@@ -50,14 +54,51 @@ const Message = ({ children }: { readonly children: string }) => (
   </p>
 );
 
+const Elapsed = ({ since }: { readonly since: number }) => {
+  const now = useNow(1000);
+
+  return <span>{` · ${formatWorkingDuration(now - since)}`}</span>;
+};
+
+/**
+ * The quiet line under the last entry while the agent is in a turn, with
+ * the list's spinner and how long the turn has run. Not a control.
+ */
+const WorkingLine = ({ since }: { readonly since: string | null }) => {
+  const started = since === null ? Number.NaN : Date.parse(since);
+
+  return (
+    <output className="text-muted-foreground mt-4 flex items-center gap-2 text-sm tabular-nums">
+      <span className="flex size-6 items-center justify-center">
+        <CircleDashedIcon
+          aria-hidden
+          className="text-info-foreground motion-safe:animate-spin-slow size-3.5"
+        />
+      </span>
+      <span>
+        Working
+        {Number.isFinite(started) ? <Elapsed since={started} /> : null}
+      </span>
+    </output>
+  );
+};
+
 const TranscriptScreen = () => {
   const { sessionId } = useParams({ from: "/s/$sessionId" });
   const { connection, orpc } = usePaired();
   // Opening the session clears Done on every client.
   useMarkViewed(connection.client, sessionId);
 
-  const { error, loadEarlier, loadingEarlier, notFound, transcript } =
-    useTranscript(orpc, sessionId);
+  const {
+    arrivedLive,
+    error,
+    loadEarlier,
+    loadingEarlier,
+    notFound,
+    transcript,
+  } = useTranscript(orpc, sessionId);
+
+  const session = useSession(orpc, sessionId);
 
   useUnpairWhenRefused(error);
 
@@ -115,7 +156,7 @@ const TranscriptScreen = () => {
       {transcript.hasEarlier ? (
         <LoadEarlier loading={loadingEarlier} onLoad={onLoadEarlier} />
       ) : null}
-      {transcript.entries.length === 0 ? (
+      {transcript.entries.length === 0 && session?.status !== "working" ? (
         <Message>Nothing here yet.</Message>
       ) : null}
       {transcript.entries.map((entry, index) => {
@@ -123,13 +164,16 @@ const TranscriptScreen = () => {
 
         return (
           <div
-            className={SPACE_ABOVE[spaceAbove(previous, entry)]}
+            className={`${SPACE_ABOVE[spaceAbove(previous, entry)]} ${arrivedLive.has(entry.id) ? "motion-safe:animate-arrive" : ""}`}
             key={entry.id}
           >
             <TranscriptEntryRow entry={entry} />
           </div>
         );
       })}
+      {session?.status === "working" ? (
+        <WorkingLine since={session.turnStartedAt} />
+      ) : null}
     </main>
   );
 };

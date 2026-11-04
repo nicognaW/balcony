@@ -48,6 +48,16 @@ export interface SessionListUpdate {
 }
 
 /**
+ * A session's title to show, on one line (line breaks and runs of spaces
+ * become one space): `Untitled session` when it has none.
+ */
+export const sessionTitle = (session: Pick<Session, "title">): string => {
+  const title = session.title.replaceAll(/\s+/gu, " ").trim();
+
+  return title === "" ? "Untitled session" : title;
+};
+
+/**
  * How long a session that stopped stays in Working. A turn can end moments
  * before the next one starts (a tool hands back, a queued message runs), so
  * the row waits this long before moving.
@@ -71,7 +81,7 @@ const newestFirst = (
 ): Session[] => {
   const keys = new Map(sessions.map((session) => [session, key(session)]));
 
-  return sessions.toSorted(
+  return [...sessions].sort(
     (left, right) =>
       (keys.get(right) ?? 0) - (keys.get(left) ?? 0) ||
       left.id.localeCompare(right.id)
@@ -136,7 +146,7 @@ const rowOf =
     mark: markOf(session, working),
     project: session.project,
     session,
-    title: session.title,
+    title: sessionTitle(session),
   });
 
 interface Tracked {
