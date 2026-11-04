@@ -18,6 +18,7 @@ import {
   loadSavedServer,
   loadServerAddress,
 } from "./lib/saved-server.ts";
+import { useConnectionWakeups } from "./lib/wakeups.ts";
 import { PairedApp } from "./paired-app.tsx";
 import { PlaygroundApp } from "./playground/playground.tsx";
 import { linkTo, startPlayground } from "./playground/run.ts";
@@ -124,6 +125,7 @@ const App = () => {
   }, []);
 
   const paired = startup.kind === "ready" ? startup.paired : null;
+  useConnectionWakeups(paired?.connection ?? null);
 
   const value = useMemo(
     (): Paired | null =>

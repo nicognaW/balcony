@@ -418,5 +418,8 @@ export const createPlayground = ({
     },
     subscribe,
     toggleStatus,
+    // The fake's connection changes only when the panel says so; a wakeup
+    // just wakes the waiting calls, as any change does.
+    wake: notify,
   };
 };

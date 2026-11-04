@@ -115,6 +115,14 @@ export const pairingErrors = {
   },
 } as const;
 
+/**
+ * The text frame a client sends on its socket to check the server is still
+ * there, and the server's answer. They travel outside oRPC's messages (the
+ * client's link ignores frames it can't decode), so any socket can use them.
+ */
+export const PING = "ping";
+export const PONG = "pong";
+
 export const contract = {
   pairing: {
     /** Exchanges the short code for the token. Needs no token itself. */
