@@ -115,4 +115,12 @@ jobs:
           git init -q -b "$BRANCH"
           git add -A
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "Playground screenshots of ${{ github.sha }}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"
+          # GitHub sometimes rejects the push with "fatal error in commit_refs"
+          # (its side, not ours): try a few times before failing the job.
+          for attempt in 1 2 3 4; do
+            if git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$BRANCH"; then
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          exit 1
