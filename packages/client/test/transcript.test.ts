@@ -59,35 +59,6 @@ describe("a Transcript with earlier pages", () => {
   });
 });
 
-/** Agent text with only `text` (empty or whitespace) in it. */
-const blank = (id: string, text: string): TranscriptEntry => ({
-  id,
-  kind: "agent-text",
-  text,
-});
-
-describe("agent text with nothing in it", () => {
-  it("is left out, so it leaves no gap", () => {
-    const live = {
-      entries: [...entries(0, 2), blank("empty", ""), blank("spaces", " \n ")],
-      hasEarlier: true,
-    };
-
-    expect(idsOf(joinTranscript(live, [], undefined))).toEqual(ids(0, 2));
-  });
-
-  it("is left out of earlier pages too", () => {
-    const earlier = {
-      entries: [blank("empty", ""), ...entries(0, 2)],
-      hasEarlier: false,
-    };
-
-    expect(idsOf(joinTranscript(view(2, 4), [earlier], "e2"))).toEqual(
-      ids(0, 4)
-    );
-  });
-});
-
 const shown = (from: number, to: number) => new Set(ids(from, to));
 
 describe("entries that arrive live", () => {

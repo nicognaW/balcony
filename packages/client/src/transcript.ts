@@ -88,15 +88,10 @@ export const pagingAnchor = (
 ): string | undefined =>
   live.entries.some((entry) => entry.id === anchor) ? anchor : undefined;
 
-/** Agent text with nothing to show, which would only leave a gap. */
-const isBlank = (entry: TranscriptEntry) =>
-  entry.kind === "agent-text" && entry.text.trim() === "";
-
 /**
  * The whole Transcript loaded so far: earlier pages (in the order they were
  * loaded, newest first, from `anchor` back) before the live tail, oldest
- * first, each entry once. Pages the live tail no longer reaches are left out,
- * as is agent text with nothing in it.
+ * first, each entry once. Pages the live tail no longer reaches are left out.
  */
 export const joinTranscript = (
   live: TranscriptView,
@@ -104,10 +99,7 @@ export const joinTranscript = (
   anchor: string | undefined
 ): TranscriptView => {
   if (pagingAnchor(live, anchor) === undefined) {
-    return {
-      entries: live.entries.filter((entry) => !isBlank(entry)),
-      hasEarlier: live.hasEarlier,
-    };
+    return live;
   }
 
   const seen = new Set<string>();
@@ -115,7 +107,7 @@ export const joinTranscript = (
 
   const add = (page: readonly TranscriptEntry[]) => {
     for (const entry of page) {
-      if (!seen.has(entry.id) && !isBlank(entry)) {
+      if (!seen.has(entry.id)) {
         seen.add(entry.id);
         entries.push(entry);
       }
