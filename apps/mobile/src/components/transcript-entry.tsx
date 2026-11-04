@@ -50,7 +50,7 @@ const Detail = ({ children }: { readonly children: string | undefined }) =>
  * first.
  */
 const FileRow = ({ path }: { readonly path: string }) => {
-  const { folder, nameEnd, nameStart } = fileNameParts(path);
+  const { folder, name } = fileNameParts(path);
 
   return (
     <View
@@ -69,7 +69,7 @@ const FileRow = ({ path }: { readonly path: string }) => {
           ellipsizeMode="middle"
           numberOfLines={1}
         >
-          {`${nameStart}${nameEnd}`}
+          {name}
         </Text>
         {folder === undefined ? null : (
           <Text

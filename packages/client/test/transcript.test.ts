@@ -105,6 +105,7 @@ describe("a file-change row's path", () => {
       )
     ).toEqual({
       folder: "apps/mobile/src",
+      name: "SessionListRowWithAVeryLongComponentName.tsx",
       nameEnd: "ntName.tsx",
       nameStart: "SessionListRowWithAVeryLongCompone",
     });
@@ -114,6 +115,7 @@ describe("a file-change row's path", () => {
       )
     ).toEqual({
       folder: undefined,
+      name: "Q3 Board Deck — FINAL (revised) v12 [approved by legal].pdf",
       nameEnd: "legal].pdf",
       nameStart: "Q3 Board Deck — FINAL (revised) v12 [approved by ",
     });
@@ -122,11 +124,13 @@ describe("a file-change row's path", () => {
   it("keeps a short file name whole", () => {
     expect(fileNameParts("README.md")).toEqual({
       folder: undefined,
+      name: "README.md",
       nameEnd: "README.md",
       nameStart: "",
     });
     expect(fileNameParts("/etc/hosts")).toEqual({
       folder: "/etc",
+      name: "hosts",
       nameEnd: "hosts",
       nameStart: "",
     });
@@ -135,16 +139,19 @@ describe("a file-change row's path", () => {
   it("keeps a long extension whole, and never splits a character", () => {
     expect(fileNameParts("backup.20261104-full.tar.gz.encrypted")).toEqual({
       folder: undefined,
+      name: "backup.20261104-full.tar.gz.encrypted",
       nameEnd: ".encrypted",
       nameStart: "backup.20261104-full.tar.gz",
     });
     expect(fileNameParts("archive.verylongextension")).toEqual({
       folder: undefined,
+      name: "archive.verylongextension",
       nameEnd: ".verylongextension",
       nameStart: "archive",
     });
     expect(fileNameParts("🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀.md")).toEqual({
       folder: undefined,
+      name: "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀.md",
       nameEnd: "🚀🚀🚀🚀🚀🚀🚀.md",
       nameStart: "🚀🚀🚀🚀🚀",
     });
