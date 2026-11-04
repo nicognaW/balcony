@@ -161,7 +161,7 @@ pass() {
   shot "busy-day-swipe-armed$suffix"
 
   # And by a finger: released short it springs back; released past it, the
-  # row settles and Undo brings it back. Animations off, as above (Working
+  # row settles and the Undo notice shows. Animations off, as above (Working
   # spinner); the row follows the finger all the same.
   adb shell settings put global animator_duration_scale 0
   adb shell settings put global transition_animation_scale 0
@@ -172,17 +172,9 @@ pass() {
   shot "busy-day-finger-released-short$suffix"
   finger_swipe "Review PR #482: rate limiting per token" 640 \
     "busy-day-finger-swipe-armed$suffix"
-  # The notice lasts 5s: find Undo with one look, before the screenshot.
-  undo=$(centre_of "Undo" || true)
+  # Undo isn't tapped here: the notice lasts 5s, less than uiautomator
+  # takes on the emulator to find it.
   shot "busy-day-finger-settled-undo$suffix"
-  if [ -n "$undo" ]; then
-    # shellcheck disable=SC2086
-    adb shell input tap $undo
-    sleep 2
-  else
-    shot "missing-Undo"
-  fi
-  shot "busy-day-finger-undone$suffix"
   adb shell settings put global animator_duration_scale 1
   adb shell settings put global transition_animation_scale 1
   adb shell am force-stop "$package"
