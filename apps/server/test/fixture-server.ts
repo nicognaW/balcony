@@ -9,7 +9,7 @@ import { BunServices } from "@effect/platform-bun";
 import { Context, Effect, Layer } from "effect";
 
 import { startServer } from "../src/server.ts";
-import type { RunningServer } from "../src/server.ts";
+import type { RunningServer, ServerOptions } from "../src/server.ts";
 import { fixtureHome, fixtureNow } from "./fixture-home.ts";
 import type { FixtureHome } from "./fixture-home.ts";
 
@@ -23,7 +23,9 @@ export class Fixture extends Context.Service<
   FixtureHome & { readonly server: RunningServer; readonly clock: TestClock }
 >()("test/Fixture") {
   /** A fresh fixture home and server, separate for each layer built. */
-  static readonly make = () =>
+  static readonly make = (
+    options: Pick<ServerOptions, "silentSocketTimeout"> = {}
+  ) =>
     Layer.effect(
       Fixture,
       Effect.gen(function* makeFixture() {
@@ -36,6 +38,7 @@ export class Fixture extends Context.Service<
           now: () => clock.now,
           pollInterval: "50 millis",
           port: 0,
+          ...options,
         });
 
         return { ...home, clock, server };

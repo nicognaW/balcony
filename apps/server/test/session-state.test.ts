@@ -3,8 +3,8 @@
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createSessionList, keepViewing } from "@balcony/client";
-import type { SessionListView } from "@balcony/client";
+import { connect, createSessionList, keepViewing } from "@balcony/client";
+import type { ConnectOptions, SessionListView } from "@balcony/client";
 import type { SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
 import { describe, expect, it } from "@effect/vitest";
@@ -273,6 +273,78 @@ describe("a turn that ends while the session is open", () => {
 
         expect(markOf(closed)).toBe("time");
         expect(shownDone).toEqual([]);
+      })
+    );
+  });
+});
+
+describe("a phone that goes silent while a session is open", () => {
+  it.layer(Fixture.make({ silentSocketTimeout: "300 millis" }), {
+    excludeTestServices: true,
+  })((test) => {
+    test.effect("stops holding it open once the server drops its socket", () =>
+      Effect.gen(function* silentPhone() {
+        const { clock, server } = yield* Fixture;
+
+        /** A connection that closes with the test. */
+        const opened = (options: Partial<ConnectOptions>) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              connect({
+                server: server.origin,
+                token: server.token,
+                ...options,
+              })
+            ),
+            (connection) => Effect.sync(() => connection.close())
+          );
+
+        // The web app pings often enough to stay connected.
+        const web = (yield* opened({ pingIntervalMs: 50 })).client;
+
+        const lists = yield* Effect.acquireRelease(
+          call(() => web.sessions.watch()),
+          (iterator) => Effect.promise(async () => await iterator.return?.())
+        );
+
+        const until = (pass: (list: SessionList) => boolean) =>
+          Effect.promise(async () => {
+            for (;;) {
+              // oxlint-disable-next-line no-await-in-loop -- each list waits for the one before.
+              const result = await lists.next();
+
+              if (result.done === true) {
+                throw new Error("The session list ended");
+              }
+
+              if (pass(result.value)) {
+                return result.value;
+              }
+            }
+          }).pipe(Effect.timeout("3 seconds"));
+
+        // The phone opens the session, then its network dies: it sends
+        // nothing more, and never closes its socket.
+        const phone = yield* opened({
+          pingIntervalMs: 60_000,
+          pingTimeoutMs: 60_000,
+          retryDelayMs: 60_000,
+        });
+
+        yield* Effect.acquireRelease(
+          Effect.sync(() => keepViewing(phone.client, long)),
+          (stop) => Effect.sync(stop)
+        );
+        yield* until(
+          (list) => find(list, long)?.lastViewedAt === fixtureNowIso
+        );
+
+        // The hold ends, which marks it viewed again, at the new time.
+        clock.now = Date.parse("2026-01-15T12:01:00.000Z");
+        yield* until(
+          (list) =>
+            find(list, long)?.lastViewedAt === "2026-01-15T12:01:00.000Z"
+        );
       })
     );
   });
