@@ -2,7 +2,7 @@
 // back with "Load earlier" and follows new entries live. The list is
 // inverted, so it starts at the bottom and keeps the reader's place when
 // entries arrive. Sessions are View-only, so there is no message box.
-import { formatWorkingDuration } from "@balcony/client";
+import { formatWorkingDuration, sessionTitle } from "@balcony/client";
 import {
   useNow,
   usePaired,
@@ -19,7 +19,7 @@ import { Icon } from "../components/icon.tsx";
 import { FadeIn, Spin } from "../components/motion.tsx";
 import { TranscriptEntryRow } from "../components/transcript-entry.tsx";
 import { useAppActive } from "../lib/app-active.ts";
-import type { ScreenProps } from "../navigation.ts";
+import type { ScreenProps, StackParams } from "../navigation.ts";
 
 /** The class for each `spaceAbove`. */
 const SPACE_ABOVE = { loose: "mt-4", none: "", tight: "mt-0.5" } as const;
@@ -82,6 +82,22 @@ const WorkingLine = ({ since }: { readonly since: string | null }) => {
       </Text>
     </View>
   );
+};
+
+/**
+ * The session's title and project as the live list has them now (a title
+ * can arrive or change after the Transcript opens), or as they were when it
+ * was opened until the list arrives.
+ */
+export const useTranscriptHeading = (
+  params: StackParams["Transcript"]
+): { readonly title: string; readonly project: string } => {
+  const { orpc } = usePaired();
+  const session = useSession(orpc, params.sessionId);
+
+  return session === undefined
+    ? { project: params.project, title: params.title }
+    : { project: session.project, title: sessionTitle(session) };
 };
 
 /**
@@ -176,7 +192,8 @@ export const TranscriptScreen = ({
   navigation,
   route,
 }: ScreenProps<"Transcript">) => {
-  const { project, sessionId, title, titleShown } = route.params;
+  const { sessionId, titleShown } = route.params;
+  const { project, title } = useTranscriptHeading(route.params);
 
   return (
     <View className="flex-1">

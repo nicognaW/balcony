@@ -12,7 +12,10 @@ import { Pressable, Text, useColorScheme } from "react-native";
 import { ConnectionPill } from "./components/connection-pill.tsx";
 import type { StackParams } from "./navigation.ts";
 import { SessionsScreen } from "./screens/sessions-screen.tsx";
-import { TranscriptScreen } from "./screens/transcript-screen.tsx";
+import {
+  TranscriptScreen,
+  useTranscriptHeading,
+} from "./screens/transcript-screen.tsx";
 
 const Stack = createNativeStackNavigator<StackParams>();
 
@@ -27,26 +30,33 @@ const TranscriptTitle = ({
 }: {
   readonly onPress: () => void;
   readonly params: StackParams["Transcript"];
-}) => (
-  <Pressable
-    accessibilityHint={
-      params.titleShown === true
-        ? "Hides the whole title"
-        : "Shows the whole title"
-    }
-    accessibilityRole="button"
-    accessibilityState={{ expanded: params.titleShown === true }}
-    className="min-w-0 flex-1"
-    onPress={onPress}
-  >
-    <Text className="text-foreground text-base font-semibold" numberOfLines={1}>
-      {params.title}
-    </Text>
-    <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-      {params.project}
-    </Text>
-  </Pressable>
-);
+}) => {
+  const { project, title } = useTranscriptHeading(params);
+
+  return (
+    <Pressable
+      accessibilityHint={
+        params.titleShown === true
+          ? "Hides the whole title"
+          : "Shows the whole title"
+      }
+      accessibilityRole="button"
+      accessibilityState={{ expanded: params.titleShown === true }}
+      className="min-w-0 flex-1"
+      onPress={onPress}
+    >
+      <Text
+        className="text-foreground text-base font-semibold"
+        numberOfLines={1}
+      >
+        {title}
+      </Text>
+      <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+        {project}
+      </Text>
+    </Pressable>
+  );
+};
 
 export const PairedApp = ({
   initialState,
