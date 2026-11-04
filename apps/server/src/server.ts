@@ -1,5 +1,7 @@
 // The Balcony server: the oRPC API over WebSocket at /rpc and the built web
 // app, on one port. It runs while its scope is open.
+import { isIP } from "node:net";
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -115,6 +117,42 @@ const allowedOrigin = (request: Request) => {
   }
 };
 
+/**
+ * Whether the Host a request asked for names this machine in a way DNS
+ * rebinding can't fake: an IP address, localhost, an mDNS `.local` name or the
+ * machine's own name. A page on `attacker.example` whose DNS later points at
+ * the Mac sends Host and Origin both `attacker.example`, so the Origin check
+ * alone would let it in.
+ */
+const allowedHost = (request: Request) => {
+  const host = request.headers.get("host");
+
+  if (host === null) {
+    return false;
+  }
+
+  let name: string;
+
+  try {
+    name = new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  // URL keeps the brackets round an IPv6 address.
+  const bare = name.startsWith("[") ? name.slice(1, -1) : name;
+  const machine = hostname().toLowerCase();
+
+  return (
+    isIP(bare) !== 0 ||
+    name === "localhost" ||
+    name.endsWith(".localhost") ||
+    name.endsWith(".local") ||
+    name === machine ||
+    name === `${machine}.local`
+  );
+};
+
 interface SocketData {
   readonly token: string | null;
 }
@@ -164,7 +202,7 @@ export const startServer = Effect.fn("startServer")(function* startServer(
           if (url.pathname === "/rpc") {
             // Pairing is open to anyone who connects; pages on other sites
             // must not be able to guess codes or lock them.
-            if (!allowedOrigin(request)) {
+            if (!allowedHost(request) || !allowedOrigin(request)) {
               return new Response("Forbidden origin", { status: 403 });
             }
 
