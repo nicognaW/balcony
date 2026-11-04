@@ -27,7 +27,7 @@ import {
 import type {
   Connection,
   ConnectionState,
-  PairingRefusal,
+  PairingRefused,
   SessionListView,
 } from "./index.ts";
 import {
@@ -78,9 +78,7 @@ export const pairWithCode = async ({
   readonly code: string;
   readonly save: (token: string) => Promise<void> | void;
   readonly server: string;
-}): Promise<
-  { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
-> => {
+}): Promise<{ readonly paired: PairedConnection } | PairingRefused> => {
   const result = await redeemPairingCode({ code, server });
 
   if ("refusal" in result) {

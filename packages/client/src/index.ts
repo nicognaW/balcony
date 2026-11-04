@@ -1,7 +1,7 @@
 // The typed Balcony client over WebSocket, shared by the web app, the mobile
 // app and the server's contract tests.
 import type { BalconyClient } from "@balcony/contracts";
-import { createORPCClient, ORPCError } from "@orpc/client";
+import { createORPCClient, ORPCError, safe } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import type { WebSocketLike } from "@orpc/client/websocket";
 
@@ -66,34 +66,44 @@ export const rpcUrl = (server: string, token: string | null): string => {
 };
 
 /**
+ * Runs `call` with a client for `pairing.exchange` over a one-off socket,
+ * closed once `call` settles.
+ */
+const withPairingClient = async <T>(
+  server: string,
+  call: (client: BalconyClient) => Promise<T>
+): Promise<T> => {
+  const socket = new WebSocket(rpcUrl(server, null));
+  socket.binaryType = "arraybuffer";
+
+  try {
+    // No reconnect, so closing the socket ends the link.
+    return await call(
+      createORPCClient<BalconyClient>(new RPCLink({ connect: () => socket }))
+    );
+  } finally {
+    socket.close();
+  }
+};
+
+/**
  * Exchanges the short pairing code shown on the Mac for the long-lived token,
  * over a one-off socket that closes afterwards. Fails with the contract's
  * pairing errors (`PAIRING_CODE_WRONG`, `PAIRING_CODE_EXPIRED`,
  * `PAIRING_CODE_LOCKED`).
  */
-export const exchangePairingCode = async ({
+export const exchangePairingCode = ({
   code,
   server,
 }: {
   readonly code: string;
   readonly server: string;
-}): Promise<string> => {
-  const socket = new WebSocket(rpcUrl(server, null));
-  socket.binaryType = "arraybuffer";
-
-  // No reconnect, so closing the socket ends the link.
-  const client = createORPCClient<BalconyClient>(
-    new RPCLink({ connect: () => socket })
-  );
-
-  try {
+}): Promise<string> =>
+  withPairingClient(server, async (client) => {
     const { token } = await client.pairing.exchange({ code });
 
     return token;
-  } finally {
-    socket.close();
-  }
-};
+  });
 
 /** Whether the server refused the call because the token is wrong. */
 export const isUnauthorized = (error: Error | null): boolean =>
@@ -110,46 +120,42 @@ export type PairingRefusal =
   | "unreachable"
   | "other";
 
-const refusalOf = (code: string): PairingRefusal => {
-  switch (code) {
-    case "PAIRING_CODE_WRONG": {
-      return "wrong";
-    }
+/** Why a short code didn't pair, with the tries left after a wrong one. */
+export type PairingRefused =
+  | { readonly refusal: "wrong"; readonly attemptsLeft: number }
+  | { readonly refusal: Exclude<PairingRefusal, "wrong"> };
 
-    case "PAIRING_CODE_EXPIRED": {
-      return "expired";
-    }
-
-    case "PAIRING_CODE_LOCKED": {
-      return "locked";
-    }
-
-    default: {
-      return "other";
-    }
-  }
-};
-
-export type PairingOutcome =
-  | { readonly token: string }
-  | { readonly refusal: PairingRefusal };
+export type PairingOutcome = { readonly token: string } | PairingRefused;
 
 /**
  * The token a `pairing.exchange` call gave, or why it didn't pair instead
  * of failing, for the pairing screen.
  */
 export const pairingOutcome = async (
-  exchange: Promise<{ readonly token: string }>
+  exchange: ReturnType<BalconyClient["pairing"]["exchange"]>
 ): Promise<PairingOutcome> => {
-  try {
-    const { token } = await exchange;
+  const { data, definedError, error } = await safe(exchange);
 
-    return { token };
-  } catch (error) {
-    return {
-      refusal:
-        error instanceof ORPCError ? refusalOf(error.code) : "unreachable",
-    };
+  if (error === null) {
+    return { token: data.token };
+  }
+
+  switch (definedError?.code) {
+    case "PAIRING_CODE_WRONG": {
+      return { attemptsLeft: definedError.data.attemptsLeft, refusal: "wrong" };
+    }
+
+    case "PAIRING_CODE_EXPIRED": {
+      return { refusal: "expired" };
+    }
+
+    case "PAIRING_CODE_LOCKED": {
+      return { refusal: "locked" };
+    }
+
+    default: {
+      return { refusal: error instanceof ORPCError ? "other" : "unreachable" };
+    }
   }
 };
 
@@ -157,11 +163,46 @@ export const pairingOutcome = async (
  * Exchanges the short pairing code for the token, as `exchangePairingCode`,
  * but tells why it didn't pair instead of failing, for the pairing screen.
  */
-export const redeemPairingCode = (pairing: {
+export const redeemPairingCode = ({
+  code,
+  server,
+}: {
   readonly code: string;
   readonly server: string;
 }): Promise<PairingOutcome> =>
-  pairingOutcome(exchangePairingCode(pairing).then((token) => ({ token })));
+  withPairingClient(server, (client) =>
+    pairingOutcome(client.pairing.exchange({ code }))
+  );
+
+const NEW_CODE_HINT =
+  "Press Enter in the terminal running balcony for a new one.";
+
+/** What the pairing screens tell the user when a short code didn't pair. */
+export const pairingRefusalMessage = (refused: PairingRefused): string => {
+  switch (refused.refusal) {
+    case "wrong": {
+      const tries = refused.attemptsLeft === 1 ? "try" : "tries";
+
+      return `That isn't the code on your Mac. Check it and try again (${refused.attemptsLeft} ${tries} left).`;
+    }
+
+    case "expired": {
+      return `That code has expired. ${NEW_CODE_HINT}`;
+    }
+
+    case "locked": {
+      return `Too many wrong tries. ${NEW_CODE_HINT}`;
+    }
+
+    case "unreachable": {
+      return "Couldn't reach Balcony. Is this phone on the same Wi-Fi as your Mac?";
+    }
+
+    default: {
+      return "Balcony couldn't pair this phone. Try again.";
+    }
+  }
+};
 
 /**
  * A socket that never opens. The link waits on it instead of reconnecting,

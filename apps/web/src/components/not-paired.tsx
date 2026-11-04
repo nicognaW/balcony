@@ -1,23 +1,10 @@
-import type { PairingRefusal } from "@balcony/client";
+import { pairingRefusalMessage } from "@balcony/client";
 import { QrCodeIcon } from "lucide-react";
 import { useActionState, useId } from "react";
 
 import type { NotPairedProps } from "@/components/balcony-provider.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { pairByCode } from "@/lib/connection.ts";
-
-const NEW_CODE_HINT =
-  "Press Enter in the terminal running balcony for a new one.";
-
-/** What to tell the user when the short code didn't pair. */
-const REFUSAL_MESSAGES: Record<PairingRefusal, string> = {
-  expired: `That code has expired. ${NEW_CODE_HINT}`,
-  locked: `Too many wrong tries. ${NEW_CODE_HINT}`,
-  other: "Balcony couldn't pair this phone. Try again.",
-  unreachable:
-    "Couldn't reach Balcony. Is this phone on the same Wi-Fi as your Mac?",
-  wrong: "That isn't the code on your Mac. Check it and try again.",
-};
 
 /** Pairs by the short code `balcony` prints under the QR code. */
 const CodeForm = ({ onPaired }: Pick<NotPairedProps, "onPaired">) => {
@@ -29,7 +16,7 @@ const CodeForm = ({ onPaired }: Pick<NotPairedProps, "onPaired">) => {
       const result = await pairByCode(String(form.get("code") ?? ""));
 
       if ("refusal" in result) {
-        return REFUSAL_MESSAGES[result.refusal];
+        return pairingRefusalMessage(result);
       }
 
       onPaired(result.paired);

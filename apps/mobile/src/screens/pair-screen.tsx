@@ -1,4 +1,5 @@
-import type { PairingRefusal } from "@balcony/client";
+import { pairingRefusalMessage } from "@balcony/client";
+import type { PairingRefused } from "@balcony/client";
 import type { PairedConnection } from "@balcony/client/react";
 // Pairing: scan the QR code `balcony` prints, or type the Mac's address and
 // the short code shown under the QR. Wording follows the web app's.
@@ -25,18 +26,8 @@ import { withUniwind } from "uniwind";
 
 import type { SavedServer } from "../lib/saved-server.ts";
 
-const CODE_MESSAGES: Record<PairingRefusal | "not-saved", string> = {
-  expired:
-    "That code has expired. Press Enter in the terminal running balcony for a new one.",
-  locked:
-    "Too many wrong tries. Press Enter in the terminal running balcony for a new one.",
-  // The phone's keystore refused to keep the pairing.
-  "not-saved": "This phone couldn't keep the pairing. Try again.",
-  other: "Pairing failed. Try again.",
-  unreachable:
-    "Couldn't reach Balcony. Is this phone on the same Wi-Fi as your Mac?",
-  wrong: "That isn't the code on your Mac. Check it and try again.",
-};
+// The phone's keystore refused to keep the pairing.
+const NOT_SAVED_MESSAGE = "This phone couldn't keep the pairing. Try again.";
 
 const ADDRESS_MESSAGES: Record<AddressRefusal | "no-token", string> = {
   invalid:
@@ -54,9 +45,7 @@ export interface Pairing {
   readonly withCode: (
     server: string,
     code: string
-  ) => Promise<
-    { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
-  >;
+  ) => Promise<{ readonly paired: PairedConnection } | PairingRefused>;
 }
 
 export interface PairScreenProps {
@@ -194,7 +183,7 @@ export const PairScreen = ({
       setBusy(false);
       // Scanning the same code again tries again.
       lastScan.current = null;
-      setMessage(CODE_MESSAGES["not-saved"]);
+      setMessage(NOT_SAVED_MESSAGE);
 
       return;
     }
@@ -214,18 +203,20 @@ export const PairScreen = ({
     setBusy(true);
     setMessage(null);
 
-    const result = await pairing.withCode(parsed.server, code).catch(() => ({
-      refusal: "not-saved" as const,
-    }));
+    const result = await pairing
+      .withCode(parsed.server, code)
+      .catch(() => "not-saved" as const);
 
-    if ("paired" in result) {
+    if (result !== "not-saved" && "paired" in result) {
       onPaired(result.paired);
 
       return;
     }
 
     setBusy(false);
-    setMessage(CODE_MESSAGES[result.refusal]);
+    setMessage(
+      result === "not-saved" ? NOT_SAVED_MESSAGE : pairingRefusalMessage(result)
+    );
   };
 
   return (
