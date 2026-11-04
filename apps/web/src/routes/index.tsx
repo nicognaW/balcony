@@ -3,6 +3,7 @@ import type { SessionRow as Row } from "@balcony/client";
 import {
   usePaired,
   useSessionList,
+  useSettleWithUndo,
   useUnpairWhenRefused,
 } from "@balcony/client/react";
 import type { Session } from "@balcony/contracts";
@@ -12,11 +13,21 @@ import { ChevronRightIcon } from "lucide-react";
 import { useId, useState } from "react";
 
 import { SessionRow } from "@/components/session-row.tsx";
+import { UndoToast } from "@/components/undo-toast.tsx";
 
-const Rows = ({ rows }: { readonly rows: readonly Row[] }) => (
+/** Settles a row, or un-settles it when it is Settled. */
+type Settle = (row: Row) => Promise<void>;
+
+const Rows = ({
+  onSettle,
+  rows,
+}: {
+  readonly onSettle: Settle;
+  readonly rows: readonly Row[];
+}) => (
   <ul className="flex flex-col gap-2">
     {rows.map((row) => (
-      <SessionRow key={row.id} row={row} />
+      <SessionRow key={row.id} onSettle={() => onSettle(row)} row={row} />
     ))}
   </ul>
 );
@@ -24,9 +35,11 @@ const Rows = ({ rows }: { readonly rows: readonly Row[] }) => (
 /** A titled section of the list, like T3 Code's sidebar shelves. */
 const Section = ({
   label,
+  onSettle,
   rows,
 }: {
   readonly label: string;
+  readonly onSettle: Settle;
   readonly rows: readonly Row[];
 }) => {
   const id = useId();
@@ -42,7 +55,7 @@ const Section = ({
           {rows.length}
         </span>
       </h2>
-      <Rows rows={rows} />
+      <Rows onSettle={onSettle} rows={rows} />
     </section>
   );
 };
@@ -51,7 +64,13 @@ const Section = ({
  * Settled sessions at the bottom: collapsed until opened, then 10 at a time
  * with Show more, as T3 Code's settled shelf.
  */
-const SettledSection = ({ rows }: { readonly rows: readonly Row[] }) => {
+const SettledSection = ({
+  onSettle,
+  rows,
+}: {
+  readonly onSettle: Settle;
+  readonly rows: readonly Row[];
+}) => {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [more, setMore] = useState(0);
@@ -78,7 +97,7 @@ const SettledSection = ({ rows }: { readonly rows: readonly Row[] }) => {
       </h2>
       {open ? (
         <>
-          <Rows rows={page.rows} />
+          <Rows onSettle={onSettle} rows={page.rows} />
           {page.hidden > 0 ? (
             <button
               className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded px-1 py-1.5 text-left text-xs font-medium outline-none focus-visible:ring-2"
@@ -102,12 +121,21 @@ const Sections = ({
   readonly sessions: readonly Session[];
 }) => {
   const { main, settled, working } = useSessionList(sessions, receivedAt);
+  const undoable = useSettleWithUndo(usePaired().connection.client);
+
+  const onSettle: Settle = (row) =>
+    undoable.settle(row.id, row.session.settledAt === null);
 
   return (
-    <div className="flex flex-col gap-5 px-3 pb-6">
-      {working.length > 0 ? <Section label="Working" rows={working} /> : null}
-      {main.length > 0 ? <Rows rows={main} /> : null}
-      {settled.length > 0 ? <SettledSection rows={settled} /> : null}
+    <div className="flex flex-col gap-5 px-3 pb-20">
+      {working.length > 0 ? (
+        <Section label="Working" onSettle={onSettle} rows={working} />
+      ) : null}
+      {main.length > 0 ? <Rows onSettle={onSettle} rows={main} /> : null}
+      {settled.length > 0 ? (
+        <SettledSection onSettle={onSettle} rows={settled} />
+      ) : null}
+      <UndoToast notice={undoable.notice} onUndo={() => undoable.undo()} />
     </div>
   );
 };

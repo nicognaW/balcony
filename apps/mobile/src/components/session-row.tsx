@@ -1,18 +1,21 @@
 // A session in the list, laid out like T3 Code's row: project and status,
-// Done or time, then the title, then the branch, with Settle at the corner. Adapted from T3 Code (MIT, (c) 2026
-// T3 Tools Inc., apps/mobile/src/features/threads/thread-list-v2-items.tsx).
+// Done or time, then the title, then the branch. Swiped left, it settles
+// (or un-settles); screen readers get the same as a row action. Adapted
+// from T3 Code (MIT, (c) 2026 T3 Tools Inc.,
+// apps/mobile/src/features/threads/thread-list-v2-items.tsx).
 import { formatRelativeTime, formatWorkingDuration } from "@balcony/client";
 import type { RowMark, SessionRow as Row } from "@balcony/client";
-import { useNow, usePaired, useSettle } from "@balcony/client/react";
+import { useNow } from "@balcony/client/react";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
   GitBranchIcon,
 } from "lucide-react-native";
-import { Pressable, Text, View } from "react-native";
+import { AccessibilityInfo, Pressable, Text, View } from "react-native";
 
 import { Icon } from "./icon.tsx";
 import { Spin } from "./motion.tsx";
+import { SwipeToSettle } from "./swipe-to-settle.tsx";
 
 const WorkingDuration = ({ since }: { readonly since: number }) => {
   const now = useNow(1000);
@@ -66,77 +69,67 @@ const Mark = ({ mark }: { readonly mark: RowMark }) => {
   }
 };
 
-const settleLabel = (row: Row) =>
-  row.session.settledAt === null ? "Settle" : "Un-settle";
-
-/** Settles the session, or un-settles it when it is Settled. */
-const SettleButton = ({ row }: { readonly row: Row }) => {
-  const settle = useSettle(usePaired().connection.client);
-  const settled = row.session.settledAt !== null;
-
-  return (
-    <Pressable
-      accessibilityLabel={`${settleLabel(row)} ${row.title}`}
-      accessibilityRole="button"
-      className="absolute right-1.5 bottom-1 rounded px-1.5 py-1 active:opacity-60 disabled:opacity-60"
-      disabled={settle.isPending}
-      hitSlop={6}
-      onPress={() => settle.mutate({ id: row.id, settled: !settled })}
-    >
-      <Text className="text-muted-foreground text-xs font-medium">
-        {settleLabel(row)}
-      </Text>
-    </Pressable>
-  );
-};
-
-// The Settle button sits over the card rather than inside it, so the two
-// stay separate controls. The branch line keeps room for it with an
-// invisible copy of its label, so neither covers the other at any text size,
-// and the card grows with large text rather than clipping it.
 export const SessionRow = ({
   onPress,
+  onSettle,
   row,
 }: {
   readonly onPress: () => void;
+  /** Settles the row, or un-settles it when it is Settled. */
+  readonly onSettle: () => Promise<void>;
   readonly row: Row;
-}) => (
-  <View>
-    <Pressable
-      accessibilityHint="Opens the Transcript"
-      accessibilityRole="button"
-      className="bg-card border-border active:bg-accent min-h-[78px] rounded-xl border px-3 py-2"
-      onPress={onPress}
+}) => {
+  const settled = row.session.settledAt !== null;
+
+  return (
+    // Keyed by its side: a row that has just been settled or un-settled
+    // starts afresh, at home.
+    <SwipeToSettle
+      id={row.id}
+      key={String(settled)}
+      onSettle={onSettle}
+      settled={settled}
     >
-      <View className="flex-row items-center gap-1.5">
-        <Text
-          className="text-muted-foreground min-w-0 flex-1 text-xs"
-          numberOfLines={1}
-        >
-          {row.project}
+      <Pressable
+        accessibilityActions={[
+          { label: settled ? "Un-settle" : "Settle", name: "settle" },
+        ]}
+        accessibilityHint="Opens the Transcript"
+        accessibilityRole="button"
+        className="bg-card border-border active:bg-accent min-h-[78px] rounded-xl border px-3 py-2"
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === "settle") {
+            void onSettle().catch(() =>
+              AccessibilityInfo.announceForAccessibility(
+                `Couldn't ${settled ? "un-settle" : "settle"}. Try again.`
+              )
+            );
+          }
+        }}
+        onPress={onPress}
+      >
+        <View className="flex-row items-center gap-1.5">
+          <Text
+            className="text-muted-foreground min-w-0 flex-1 text-xs"
+            numberOfLines={1}
+          >
+            {row.project}
+          </Text>
+          <Mark mark={row.mark} />
+        </View>
+        <Text className="text-foreground mt-1 text-sm" numberOfLines={1}>
+          {row.title}
         </Text>
-        <Mark mark={row.mark} />
-      </View>
-      <Text className="text-foreground mt-1 text-sm" numberOfLines={1}>
-        {row.title}
-      </Text>
-      <View className="mt-0.5 flex-row items-center gap-1">
-        {row.branch === null ? null : <Icon icon={GitBranchIcon} size={12} />}
-        <Text
-          className="text-muted-foreground min-w-0 flex-1 text-xs"
-          numberOfLines={1}
-        >
-          {row.branch ?? ""}
-        </Text>
-        <Text
-          aria-hidden
-          className="px-1.5 text-xs font-medium opacity-0"
-          importantForAccessibility="no-hide-descendants"
-        >
-          {settleLabel(row)}
-        </Text>
-      </View>
-    </Pressable>
-    <SettleButton row={row} />
-  </View>
-);
+        <View className="mt-0.5 flex-row items-center gap-1">
+          {row.branch === null ? null : <Icon icon={GitBranchIcon} size={12} />}
+          <Text
+            className="text-muted-foreground min-w-0 flex-1 text-xs"
+            numberOfLines={1}
+          >
+            {row.branch ?? ""}
+          </Text>
+        </View>
+      </Pressable>
+    </SwipeToSettle>
+  );
+};

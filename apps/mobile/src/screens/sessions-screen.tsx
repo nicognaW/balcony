@@ -5,6 +5,7 @@ import type { SessionRow as Row } from "@balcony/client";
 import {
   usePaired,
   useSessionList,
+  useSettleWithUndo,
   useUnpairWhenRefused,
 } from "@balcony/client/react";
 import type { Session } from "@balcony/contracts";
@@ -15,6 +16,7 @@ import { FlatList, Pressable, Text, View } from "react-native";
 
 import { Icon } from "../components/icon.tsx";
 import { SessionRow } from "../components/session-row.tsx";
+import { UndoToast } from "../components/undo-toast.tsx";
 import type { ScreenProps } from "../navigation.ts";
 
 type Item =
@@ -82,6 +84,7 @@ const Sections = ({
   readonly sessions: readonly Session[];
 }) => {
   const { main, settled, working } = useSessionList(sessions, receivedAt);
+  const undoable = useSettleWithUndo(usePaired().connection.client);
   const [settledOpen, setSettledOpen] = useState(false);
   const [more, setMore] = useState(0);
   const settledShown = settledPage(settled, more);
@@ -149,6 +152,9 @@ const Sections = ({
                 title: item.row.title,
               })
             }
+            onSettle={() =>
+              undoable.settle(item.row.id, item.row.session.settledAt === null)
+            }
             row={item.row}
           />
         );
@@ -157,14 +163,17 @@ const Sections = ({
   };
 
   return (
-    <FlatList
-      ListFooterComponent={Footer}
-      contentContainerClassName="gap-2 px-3 pt-2"
-      contentInsetAdjustmentBehavior="automatic"
-      data={items}
-      keyExtractor={keyOf}
-      renderItem={renderItem}
-    />
+    <View className="flex-1">
+      <FlatList
+        ListFooterComponent={Footer}
+        contentContainerClassName="gap-2 px-3 pt-2 pb-16"
+        contentInsetAdjustmentBehavior="automatic"
+        data={items}
+        keyExtractor={keyOf}
+        renderItem={renderItem}
+      />
+      <UndoToast notice={undoable.notice} onUndo={() => undoable.undo()} />
+    </View>
   );
 };
 

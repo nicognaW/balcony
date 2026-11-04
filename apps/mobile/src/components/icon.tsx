@@ -7,6 +7,7 @@ const TONES = {
   foreground: "text-foreground",
   "info-foreground": "text-info-foreground",
   "muted-foreground": "text-muted-foreground",
+  "primary-foreground": "text-primary-foreground",
   "success-foreground": "text-success-foreground",
 } as const;
 

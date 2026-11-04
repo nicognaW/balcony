@@ -224,6 +224,57 @@ export const useSettle = (client: BalconyClient) =>
         : client.sessions.unsettle({ id }),
   });
 
+/** How long the Undo notice stays after a settle or un-settle. */
+export const UNDO_SHOWN_MS = 5000;
+
+/** What was just settled or un-settled, for the Undo notice. */
+export interface SettleNotice {
+  readonly id: string;
+  /** True when it was settled; false when un-settled. */
+  readonly settled: boolean;
+  /** "Settled" or "Un-settled". */
+  readonly label: string;
+}
+
+/**
+ * Settles or un-settles sessions from the list, keeping the last one as a
+ * notice with Undo for `UNDO_SHOWN_MS`. `settle` resolves once the server
+ * has it (the notice shows then) and rejects when it refused, so a swiped
+ * row can come back.
+ */
+export const useSettleWithUndo = (client: BalconyClient) => {
+  const { mutate, mutateAsync } = useSettle(client);
+  const [notice, setNotice] = useState<SettleNotice | null>(null);
+
+  // A new notice is a new object, so each one gets its full time.
+  useEffect(() => {
+    if (notice === null) {
+      return;
+    }
+
+    const timer = setTimeout(() => setNotice(null), UNDO_SHOWN_MS);
+
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  return {
+    dismiss: () => setNotice(null),
+    notice,
+    settle: async (id: string, settled: boolean) => {
+      await mutateAsync({ id, settled });
+      setNotice({ id, label: settled ? "Settled" : "Un-settled", settled });
+    },
+    undo: () => {
+      if (notice === null) {
+        return;
+      }
+
+      setNotice(null);
+      mutate({ id: notice.id, settled: !notice.settled });
+    },
+  };
+};
+
 /**
  * Holds the session open on the server while its Transcript is `visible`
  * (web: the page is visible; Android: the app is active). It is marked

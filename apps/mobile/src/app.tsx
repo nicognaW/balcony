@@ -10,7 +10,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { Linking, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { withUniwind } from "uniwind";
 
 import { pairByCode, pairWith, queryClient } from "./lib/connection.ts";
 import {
@@ -33,6 +35,9 @@ type Startup =
       readonly paired: PairedConnection | null;
       readonly lastServer: string | null;
     };
+
+// Gesture Handler's root, for the session rows' swipe.
+const GestureRoot = withUniwind(GestureHandlerRootView);
 
 const realPairing: Pairing = { withCode: pairByCode, withQr: pairWith };
 
@@ -149,37 +154,39 @@ const App = () => {
   );
 
   return (
-    <SafeAreaProvider>
-      <StatusBar />
-      {/* Hidden, not unmounted, under the playground: leaving it finds the
+    <GestureRoot className="flex-1">
+      <SafeAreaProvider>
+        <StatusBar />
+        {/* Hidden, not unmounted, under the playground: leaving it finds the
           app as it was, screens and live data included. */}
-      <View className={playground.run === null ? "flex-1" : "hidden"}>
-        {startup.kind === "loading" ? null : (
-          <Home
-            lastServer={startup.lastServer}
-            onPaired={(next) => {
-              setRefused(false);
-              setStartup({
-                kind: "ready",
-                lastServer: next.server,
-                paired: next,
-              });
-            }}
-            onPlayground={() => playground.open(linkTo("busy-day"))}
-            paired={value}
-            refused={refused}
+        <View className={playground.run === null ? "flex-1" : "hidden"}>
+          {startup.kind === "loading" ? null : (
+            <Home
+              lastServer={startup.lastServer}
+              onPaired={(next) => {
+                setRefused(false);
+                setStartup({
+                  kind: "ready",
+                  lastServer: next.server,
+                  paired: next,
+                });
+              }}
+              onPlayground={() => playground.open(linkTo("busy-day"))}
+              paired={value}
+              refused={refused}
+            />
+          )}
+        </View>
+        {playground.run === null ? null : (
+          <PlaygroundApp
+            key={playground.run.id}
+            onExit={() => playground.close()}
+            onScenario={(id) => playground.open(linkTo(id))}
+            run={playground.run}
           />
         )}
-      </View>
-      {playground.run === null ? null : (
-        <PlaygroundApp
-          key={playground.run.id}
-          onExit={() => playground.close()}
-          onScenario={(id) => playground.open(linkTo(id))}
-          run={playground.run}
-        />
-      )}
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </GestureRoot>
   );
 };
 

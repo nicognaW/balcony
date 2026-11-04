@@ -6,6 +6,7 @@ import type {
   Playground,
   PlaygroundLink,
   PlaygroundScreen,
+  PlaygroundSwipe,
   ScenarioId,
 } from "@balcony/client/playground";
 import { createQueryClient } from "@balcony/client/react";
@@ -55,6 +56,8 @@ export interface PlaygroundRun {
   readonly playground: Playground;
   readonly queryClient: QueryClient;
   readonly screen: PlaygroundScreen;
+  /** The row the link holds swiped partway, if any. */
+  readonly swipe: PlaygroundSwipe | undefined;
   readonly initialState: InitialState | undefined;
 }
 
@@ -87,6 +90,7 @@ export const startPlayground = (link: PlaygroundLink): PlaygroundRun => {
     playground,
     queryClient,
     screen: link.screen,
+    swipe: link.swipe,
   };
 };
 
@@ -95,4 +99,5 @@ export const linkTo = (id: ScenarioId): PlaygroundLink => ({
   scenario: id,
   screen: scenarioOf(id).screen,
   session: undefined,
+  swipe: undefined,
 });
