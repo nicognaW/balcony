@@ -84,8 +84,30 @@ const WorkingLine = ({ since }: { readonly since: string | null }) => {
   );
 };
 
-export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
-  const { sessionId } = route.params;
+/**
+ * The session's whole title and project, under the header that cuts them to
+ * one line. Tapping it hides it again.
+ */
+const FullTitle = ({
+  onHide,
+  project,
+  title,
+}: {
+  readonly onHide: () => void;
+  readonly project: string;
+  readonly title: string;
+}) => (
+  <Pressable
+    accessibilityHint="Hides the whole title"
+    className="border-border bg-card gap-0.5 border-b px-4 py-3"
+    onPress={onHide}
+  >
+    <Text className="text-foreground text-base font-semibold">{title}</Text>
+    <Text className="text-muted-foreground text-xs">{project}</Text>
+  </Pressable>
+);
+
+const TranscriptBody = ({ sessionId }: { readonly sessionId: string }) => {
   const { connection, orpc } = usePaired();
   // Viewed while on screen: going to the background marks it once more,
   // and coming back marks it again.
@@ -147,5 +169,25 @@ export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
         </View>
       )}
     />
+  );
+};
+
+export const TranscriptScreen = ({
+  navigation,
+  route,
+}: ScreenProps<"Transcript">) => {
+  const { project, sessionId, title, titleShown } = route.params;
+
+  return (
+    <View className="flex-1">
+      {titleShown === true ? (
+        <FullTitle
+          onHide={() => navigation.setParams({ titleShown: false })}
+          project={project}
+          title={title}
+        />
+      ) : null}
+      <TranscriptBody sessionId={sessionId} />
+    </View>
   );
 };

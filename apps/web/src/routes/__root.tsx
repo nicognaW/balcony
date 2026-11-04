@@ -8,6 +8,7 @@ import {
   useMatch,
 } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
+import { useState } from "react";
 
 import { ConnectionIndicator } from "@/components/connection-indicator.tsx";
 
@@ -17,6 +18,9 @@ const SessionHeading = ({ sessionId }: { readonly sessionId: string }) => {
   // The list's own live query: shared, so this opens no second watch.
   const { data } = useQuery(orpc.sessions.watch.liveOptions());
   const session = data?.sessions.find((found) => found.id === sessionId);
+  // One line each until tapped; then the whole title and project.
+  const [whole, setWhole] = useState(false);
+  const line = whole ? "break-words" : "truncate";
 
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -27,16 +31,24 @@ const SessionHeading = ({ sessionId }: { readonly sessionId: string }) => {
       >
         <ArrowLeftIcon aria-hidden className="size-5" />
       </Link>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">
-          {session === undefined ? "Session" : sessionTitle(session)}
-        </p>
-        {session === undefined ? null : (
-          <p className="text-muted-foreground truncate text-xs">
+      {session === undefined ? (
+        <p className="truncate text-sm font-semibold">Session</p>
+      ) : (
+        <button
+          aria-expanded={whole}
+          className="min-w-0 cursor-pointer text-left"
+          onClick={() => setWhole(!whole)}
+          title={whole ? "Show the title on one line" : "Show the whole title"}
+          type="button"
+        >
+          <span className={`block text-sm font-semibold ${line}`}>
+            {sessionTitle(session)}
+          </span>
+          <span className={`text-muted-foreground block text-xs ${line}`}>
             {session.project}
-          </p>
-        )}
-      </div>
+          </span>
+        </button>
+      )}
     </div>
   );
 };

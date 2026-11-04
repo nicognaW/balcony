@@ -8,7 +8,7 @@ const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** A Working session's elapsed time: `12s`, `5m`, `1h 5m`. */
+/** A Working session's elapsed time: `12s`, `5m`, `1h 5m`, `1d 1h`. */
 export const formatWorkingDuration = (elapsedMs: number): string => {
   const seconds = Math.max(0, Math.floor(elapsedMs / SECOND));
 
@@ -22,7 +22,13 @@ export const formatWorkingDuration = (elapsedMs: number): string => {
     return `${minutes}m`;
   }
 
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours}h ${minutes % 60}m`;
+  }
+
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 };
 
 /** How long ago something happened, compactly: `now`, `5m`, `3h`, `2d`. */

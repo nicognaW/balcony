@@ -160,6 +160,18 @@ pass() {
     shot "edge-cases-transcript-$session$suffix"
   done
 
+  # Tapping the header's title shows the whole of it. Animations off, as
+  # above: the session is Working.
+  adb shell settings put global animator_duration_scale 0
+  adb shell settings put global transition_animation_scale 0
+  adb shell am force-stop "$package"
+  open_link "scenario=edge-cases&screen=transcript&session=edge-long-title"
+  tap "a-project-with-a-rather-long-folder-name-too"
+  shot "edge-cases-transcript-edge-long-title-whole$suffix"
+  adb shell settings put global animator_duration_scale 1
+  adb shell settings put global transition_animation_scale 1
+  adb shell am force-stop "$package"
+
   open_link "scenario=edge-cases&screen=transcript&session=edge-kinds"
   adb shell input swipe 540 600 540 1800 150
   sleep 1
