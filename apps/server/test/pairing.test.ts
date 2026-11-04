@@ -148,6 +148,7 @@ describe("the reason the pairing screens show", () => {
         const { code } = yield* server.newPairingCode;
 
         expect(yield* redeem(server.origin, otherCode(code))).toEqual({
+          attemptsLeft: 4,
           refusal: "wrong",
         });
         expect(yield* redeem(server.origin, code)).toEqual({

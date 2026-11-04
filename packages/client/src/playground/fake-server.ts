@@ -253,12 +253,6 @@ export const createPlayground = ({
       }),
     },
     sessions: {
-      markViewed: os.sessions.markViewed
-        .use(opened)
-        .use(accepted)
-        .handler(({ input }) => {
-          update(input.id, (target) => ({ ...target, lastViewedAt: iso() }));
-        }),
       settle: os.sessions.settle
         .use(opened)
         .use(accepted)
@@ -274,6 +268,24 @@ export const createPlayground = ({
             settledAt: null,
             unsettledAt: iso(),
           }));
+        }),
+      // Marked viewed when opened and when closed; unlike the server, turns
+      // that end in between aren't kept viewed.
+      view: os.sessions.view
+        .use(opened)
+        .use(accepted)
+        // oxlint-disable-next-line require-yield -- it sends nothing
+        .handler(async function* viewSession({ input, signal }) {
+          const markViewed = () =>
+            update(input.id, (target) => ({ ...target, lastViewedAt: iso() }));
+
+          markViewed();
+
+          try {
+            await until(() => closed, subscribe, signal);
+          } finally {
+            markViewed();
+          }
         }),
       watch: os.sessions.watch
         .use(opened)
@@ -418,5 +430,8 @@ export const createPlayground = ({
     },
     subscribe,
     toggleStatus,
+    // The fake's connection changes only when the panel says so; a wakeup
+    // just wakes the waiting calls, as any change does.
+    wake: notify,
   };
 };

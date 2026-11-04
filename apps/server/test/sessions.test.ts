@@ -343,3 +343,166 @@ describe("status from the Transcript when Claude's status file can't be used", (
     );
   });
 });
+
+// An agent that crashed leaves its turn open in the Transcript: Claude never
+// wrote the end of the reply, or the result of the tool it was calling.
+describe("a session whose agent crashed mid-turn", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "shows Waiting once its unfinished tool call is a few minutes old",
+      () =>
+        Effect.gen(function* crashedInToolCall() {
+          const { clock, server, statusFile } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+
+          // The working session's last line is a Bash call from 11:59:23,
+          // and its process left no status file.
+          yield* Effect.promise(() => rm(statusFile("41001.json")));
+          clock.now = Date.parse("2026-01-15T12:04:00.000Z");
+          expect(
+            find(yield* watch.next(), fixtureSessions.working)?.status
+          ).toBe("working");
+
+          clock.now = Date.parse("2026-01-15T12:04:30.000Z");
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.working)?.status === "waiting"
+          );
+        })
+    );
+  });
+
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "shows Waiting once its reply, cut off mid-stream, is a few minutes old",
+      () =>
+        Effect.gen(function* crashedInReply() {
+          const { claude, clock, server } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+          yield* watch.next();
+
+          // The long session has no status file. The agent starts a reply to
+          // a new prompt and stops without a stop reason.
+          const envelope = {
+            cwd: "/Users/nico/code/notes.site",
+            sessionId: fixtureSessions.long,
+          };
+
+          const lines = [
+            {
+              ...envelope,
+              message: { content: "Now tidy post 20.", role: "user" },
+              origin: { kind: "human" },
+              timestamp: "2026-01-15T12:00:01.000Z",
+              type: "user",
+              uuid: "0d8a7a52-0000-4000-8000-000000000005",
+            },
+            {
+              ...envelope,
+              message: {
+                content: [{ text: "Looking at post 20", type: "text" }],
+                id: "msg_0000000000000000000000f7",
+                role: "assistant",
+                stop_reason: null,
+              },
+              timestamp: "2026-01-15T12:00:05.000Z",
+              type: "assistant",
+              uuid: "0d8a7a52-0000-4000-8000-000000000006",
+            },
+          ];
+
+          yield* Effect.promise(() =>
+            appendFile(
+              path.join(
+                claude,
+                "projects",
+                "-Users-nico-code-notes-site",
+                `${fixtureSessions.long}.jsonl`
+              ),
+              lines.map((line) => `${JSON.stringify(line)}\n`).join("")
+            )
+          );
+
+          yield* watch.next(
+            (list) =>
+              find(list, fixtureSessions.long)?.lastMessageAt ===
+                "2026-01-15T12:00:05.000Z" &&
+              find(list, fixtureSessions.long)?.status === "working"
+          );
+
+          clock.now = Date.parse("2026-01-15T12:05:06.000Z");
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.long)?.status === "waiting"
+          );
+        })
+    );
+  });
+
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "shows Waiting once a prompt it never answered is a few minutes old",
+      () =>
+        Effect.gen(function* crashedBeforeReply() {
+          const { claude, clock, server } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+          yield* watch.next();
+
+          // The long session has no status file. The user types a prompt and
+          // the agent dies before writing anything back.
+          const prompt = {
+            cwd: "/Users/nico/code/notes.site",
+            message: { content: "Now tidy post 21.", role: "user" },
+            origin: { kind: "human" },
+            sessionId: fixtureSessions.long,
+            timestamp: "2026-01-15T12:00:01.000Z",
+            type: "user",
+            uuid: "0d8a7a52-0000-4000-8000-000000000007",
+          };
+
+          yield* Effect.promise(() =>
+            appendFile(
+              path.join(
+                claude,
+                "projects",
+                "-Users-nico-code-notes-site",
+                `${fixtureSessions.long}.jsonl`
+              ),
+              `${JSON.stringify(prompt)}\n`
+            )
+          );
+
+          yield* watch.next(
+            (list) =>
+              find(list, fixtureSessions.long)?.lastMessageAt ===
+                "2026-01-15T12:00:01.000Z" &&
+              find(list, fixtureSessions.long)?.status === "working"
+          );
+
+          clock.now = Date.parse("2026-01-15T12:05:02.000Z");
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.long)?.status === "waiting"
+          );
+        })
+    );
+  });
+
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("stays Working while its live status file says busy", () =>
+      Effect.gen(function* busyWins() {
+        const { clock, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
+        yield* watch.next();
+
+        // Nearly a day on the same Bash call, with status 41001 still busy.
+        // The 24-hour window ages the waiting session out on the same poll,
+        // so the list is known to be computed at the new time.
+        clock.now = Date.parse("2026-01-16T11:50:00.000Z");
+
+        const later = yield* watch.next(
+          (list) => find(list, fixtureSessions.waiting) === undefined
+        );
+
+        expect(find(later, fixtureSessions.working)?.status).toBe("working");
+      })
+    );
+  });
+});

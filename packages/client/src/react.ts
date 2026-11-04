@@ -22,12 +22,14 @@ import {
   connect,
   createSessionList,
   isUnauthorized,
+  keepViewing,
   redeemPairingCode,
 } from "./index.ts";
 import type {
   Connection,
   ConnectionState,
-  PairingRefusal,
+  PairingRefused,
+  SessionListModel,
   SessionListView,
 } from "./index.ts";
 import {
@@ -78,9 +80,7 @@ export const pairWithCode = async ({
   readonly code: string;
   readonly save: (token: string) => Promise<void> | void;
   readonly server: string;
-}): Promise<
-  { readonly paired: PairedConnection } | { readonly refusal: PairingRefusal }
-> => {
+}): Promise<{ readonly paired: PairedConnection } | PairingRefused> => {
   const result = await redeemPairingCode({ code, server });
 
   if ("refusal" in result) {
@@ -156,19 +156,35 @@ export const useNow = (intervalMs: number): number => {
   return now;
 };
 
-// One model for the app, as T3 Code keeps its inbox tracker, so the Working
-// grace survives the list unmounting (opening a session and coming back).
-const sessionList = createSessionList();
+// One model per connection, as T3 Code keeps its inbox tracker, so the
+// Working grace survives the list unmounting (opening a session and coming
+// back), while the Android playground's list and the real one, each on its
+// own connection, keep their own grace and order.
+const sessionLists = new WeakMap<Connection, SessionListModel>();
+
+const sessionListOf = (connection: Connection): SessionListModel => {
+  const known = sessionLists.get(connection);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const created = createSessionList();
+  sessionLists.set(connection, created);
+
+  return created;
+};
 
 /**
- * The session list's sections and rows for the latest sessions, received at
- * `receivedAt` (epoch ms). It updates again by itself when a Working grace
- * ends.
+ * The session list's sections and rows for the paired connection's latest
+ * sessions, received at `receivedAt` (epoch ms). It updates again by itself
+ * when a Working grace ends.
  */
 export const useSessionList = (
   sessions: readonly Session[],
   receivedAt: number
 ): SessionListView => {
+  const sessionList = sessionListOf(usePaired().connection);
   // The last grace end the list was updated for.
   const [graceEndedAt, setGraceEndedAt] = useState(0);
 
@@ -176,7 +192,7 @@ export const useSessionList = (
   // rendering twice (Strict Mode) is harmless.
   const { nextChangeAt, view } = useMemo(
     () => sessionList.update(sessions, Math.max(receivedAt, graceEndedAt)),
-    [sessions, receivedAt, graceEndedAt]
+    [sessionList, sessions, receivedAt, graceEndedAt]
   );
 
   useEffect(() => {
@@ -209,21 +225,23 @@ export const useSettle = (client: BalconyClient) =>
   });
 
 /**
- * Marks the session viewed when its Transcript opens and again when it
- * closes, so a turn the user watched finish never shows as Done.
+ * Holds the session open on the server while its Transcript is `visible`
+ * (web: the page is visible; Android: the app is active). It is marked
+ * viewed when it shows and when it hides, and a turn that ends meanwhile
+ * never shows as Done on another client.
  */
-export const useMarkViewed = (client: BalconyClient, id: string) => {
+export const useViewing = (
+  client: BalconyClient,
+  id: string,
+  visible: boolean
+) => {
   useEffect(() => {
-    const mark = () => {
-      client.sessions.markViewed({ id }).catch(() => {
-        // Offline: the next open marks it again.
-      });
-    };
+    if (!visible) {
+      return;
+    }
 
-    mark();
-
-    return mark;
-  }, [client, id]);
+    return keepViewing(client, id);
+  }, [client, id, visible]);
 };
 
 /**

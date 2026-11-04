@@ -2,6 +2,7 @@
 // as bubbles on the right, agent text as markdown, and the agent's steps as
 // compact one-line work rows (adapted from T3 Code's WorkLog, MIT,
 // (c) 2026 T3 Tools Inc.).
+import { fileNameParts } from "@balcony/client/transcript";
 import type { TranscriptEntry } from "@balcony/contracts";
 import {
   BanIcon,
@@ -35,17 +36,23 @@ const WorkRow = ({
   </div>
 );
 
-/** A path as its file name, then the folder it is in, dimmed. */
+/**
+ * A path as its file name, cut in the middle when it doesn't fit so its
+ * extension stays, then the folder it is in, dimmed, which gives way first.
+ */
 const FilePath = ({ path }: { readonly path: string }) => {
-  const slash = path.lastIndexOf("/");
+  const { folder, nameEnd, nameStart } = fileNameParts(path);
 
   return (
-    <>
-      <span className="text-foreground">{path.slice(slash + 1)}</span>
-      {slash > 0 ? (
-        <span className="ml-1.5 text-xs">{path.slice(0, slash)}</span>
-      ) : null}
-    </>
+    <span className="flex min-w-0 items-baseline">
+      <span className="text-foreground flex max-w-full shrink-0">
+        <span className="truncate whitespace-pre">{nameStart}</span>
+        <span className="shrink-0 whitespace-pre">{nameEnd}</span>
+      </span>
+      {folder === undefined ? null : (
+        <span className="ml-1.5 min-w-0 truncate text-xs">{folder}</span>
+      )}
+    </span>
   );
 };
 

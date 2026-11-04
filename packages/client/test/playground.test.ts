@@ -6,7 +6,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ORPCError } from "@orpc/client";
 
 import { createSessionList, settledPage } from "../src/index.ts";
-import { createPlayground } from "../src/playground/index.ts";
+import { createPlayground, scenarios } from "../src/playground/index.ts";
 import type { ScenarioId } from "../src/playground/index.ts";
 
 const NOW = Date.parse("2026-01-15T12:00:00.000Z");
@@ -113,6 +113,20 @@ describe("edge cases", () => {
       "user-message",
     ]);
     playground.close();
+  });
+
+  it("sends no agent text the server wouldn't: never empty or untrimmed", () => {
+    const texts = scenarios.flatMap((scenario) =>
+      [...scenario.data(NOW).transcripts.values()].flatMap((entries) =>
+        entries.flatMap((entry) =>
+          entry.kind === "agent-text" ? [entry.text] : []
+        )
+      )
+    );
+
+    expect(texts.filter((text) => text === "" || text !== text.trim())).toEqual(
+      []
+    );
   });
 
   it("pages a 200-entry Transcript back to its first entry", async () => {

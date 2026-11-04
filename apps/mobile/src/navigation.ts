@@ -8,6 +8,8 @@ export interface StackParams extends ParamListBase {
     readonly sessionId: string;
     readonly title: string;
     readonly project: string;
+    /** The whole title shows under the header (tap the header's title). */
+    readonly titleShown?: boolean;
   };
 }
 

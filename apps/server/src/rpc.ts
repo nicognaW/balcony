@@ -22,15 +22,27 @@ export interface RpcContext extends WithEffectContext<
 
 /**
  * An Effect stream as the AsyncIteratorObject oRPC's event iterators expect.
- * Stopping the iterator (client cancel, socket close) interrupts the stream.
+ * Stopping the iterator (client cancel, socket close) interrupts the stream,
+ * even while it waits for a value: an async generator wrapping it would hold
+ * the stop until the next value, which `sessions.view` never sends.
  */
 const streamToIterator = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
   Effect.map(Effect.context<R>(), (context) => {
-    const iterable = Stream.toAsyncIterableWith(stream, context);
+    const iterator = Stream.toAsyncIterableWith(stream, context)[
+      Symbol.asyncIterator
+    ]();
 
-    return (async function* iterate() {
-      yield* iterable;
-    })();
+    const object: AsyncIteratorObject<A> = {
+      [Symbol.asyncDispose]: async () => {
+        await iterator.return?.();
+      },
+      [Symbol.asyncIterator]: () => object,
+      next: () => iterator.next(),
+      return: async () =>
+        (await iterator.return?.()) ?? { done: true, value: undefined },
+    };
+
+    return object;
   });
 
 const os = implement(contract).$context<RpcContext>();
@@ -79,12 +91,6 @@ export const router = os.router({
     }),
   },
   sessions: {
-    markViewed: os.sessions.markViewed.use(authed).effect(function* markViewed({
-      input,
-    }) {
-      const marks = yield* SessionMarks;
-      yield* marks.markViewed(input.id);
-    }),
     // Settling only changes Balcony's marks; the agent is never told.
     settle: os.sessions.settle.use(authed).effect(function* settle({ input }) {
       const marks = yield* SessionMarks;
@@ -95,6 +101,13 @@ export const router = os.router({
     }) {
       const marks = yield* SessionMarks;
       yield* marks.unsettle(input.id);
+    }),
+    view: os.sessions.view.use(authed).effect(function* viewSession({ input }) {
+      const marks = yield* SessionMarks;
+
+      return yield* streamToIterator(
+        Stream.unwrap(Effect.as(marks.view(input.id), Stream.never))
+      );
     }),
     watch: os.sessions.watch.use(authed).effect(function* watchSessions() {
       const sessions = yield* Sessions;

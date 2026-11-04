@@ -2,14 +2,14 @@
 // back with "Load earlier" and follows new entries live. The list is
 // inverted, so it starts at the bottom and keeps the reader's place when
 // entries arrive. Sessions are View-only, so there is no message box.
-import { formatWorkingDuration } from "@balcony/client";
+import { formatWorkingDuration, sessionTitle } from "@balcony/client";
 import {
-  useMarkViewed,
   useNow,
   usePaired,
   useSession,
   useTranscript,
   useUnpairWhenRefused,
+  useViewing,
 } from "@balcony/client/react";
 import { spaceAbove } from "@balcony/client/transcript";
 import { CircleDashedIcon } from "lucide-react-native";
@@ -18,7 +18,8 @@ import { FlatList, Pressable, Text, View } from "react-native";
 import { Icon } from "../components/icon.tsx";
 import { FadeIn, Spin } from "../components/motion.tsx";
 import { TranscriptEntryRow } from "../components/transcript-entry.tsx";
-import type { ScreenProps } from "../navigation.ts";
+import { useAppActive } from "../lib/app-active.ts";
+import type { ScreenProps, StackParams } from "../navigation.ts";
 
 /** The class for each `spaceAbove`. */
 const SPACE_ABOVE = { loose: "mt-4", none: "", tight: "mt-0.5" } as const;
@@ -83,10 +84,50 @@ const WorkingLine = ({ since }: { readonly since: string | null }) => {
   );
 };
 
-export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
-  const { sessionId } = route.params;
+/**
+ * The session's title and project as the live list has them now (a title
+ * can arrive or change after the Transcript opens), or as they were when it
+ * was opened until the list arrives.
+ */
+export const useTranscriptHeading = (
+  params: StackParams["Transcript"]
+): { readonly title: string; readonly project: string } => {
+  const { orpc } = usePaired();
+  const session = useSession(orpc, params.sessionId);
+
+  return session === undefined
+    ? { project: params.project, title: params.title }
+    : { project: session.project, title: sessionTitle(session) };
+};
+
+/**
+ * The session's whole title and project, under the header that cuts them to
+ * one line. Tapping it hides it again.
+ */
+const FullTitle = ({
+  onHide,
+  project,
+  title,
+}: {
+  readonly onHide: () => void;
+  readonly project: string;
+  readonly title: string;
+}) => (
+  <Pressable
+    accessibilityHint="Hides the whole title"
+    className="border-border bg-card gap-0.5 border-b px-4 py-3"
+    onPress={onHide}
+  >
+    <Text className="text-foreground text-base font-semibold">{title}</Text>
+    <Text className="text-muted-foreground text-xs">{project}</Text>
+  </Pressable>
+);
+
+const TranscriptBody = ({ sessionId }: { readonly sessionId: string }) => {
   const { connection, orpc } = usePaired();
-  useMarkViewed(connection.client, sessionId);
+  // Viewed while on screen: going to the background marks it once more,
+  // and coming back marks it again.
+  useViewing(connection.client, sessionId, useAppActive());
 
   const {
     arrivedLive,
@@ -144,5 +185,26 @@ export const TranscriptScreen = ({ route }: ScreenProps<"Transcript">) => {
         </View>
       )}
     />
+  );
+};
+
+export const TranscriptScreen = ({
+  navigation,
+  route,
+}: ScreenProps<"Transcript">) => {
+  const { sessionId, titleShown } = route.params;
+  const { project, title } = useTranscriptHeading(route.params);
+
+  return (
+    <View className="flex-1">
+      {titleShown === true ? (
+        <FullTitle
+          onHide={() => navigation.setParams({ titleShown: false })}
+          project={project}
+          title={title}
+        />
+      ) : null}
+      <TranscriptBody sessionId={sessionId} />
+    </View>
   );
 };

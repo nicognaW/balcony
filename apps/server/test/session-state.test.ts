@@ -3,8 +3,8 @@
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createSessionList } from "@balcony/client";
-import type { SessionListView } from "@balcony/client";
+import { connect, createSessionList, keepViewing } from "@balcony/client";
+import type { ConnectOptions, SessionListView } from "@balcony/client";
 import type { SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
 import { describe, expect, it } from "@effect/vitest";
@@ -17,6 +17,7 @@ import {
   clientOf,
   find,
   Fixture,
+  glance,
   snapshotFiles,
   watchSessions,
 } from "./fixture-server.ts";
@@ -33,6 +34,23 @@ const sessionId = (name: string): string => {
   return id;
 };
 
+/** The fields of a Claude Transcript line that these tests write. */
+interface ClaudeLine {
+  readonly cwd: string;
+  readonly sessionId: string;
+  readonly message: {
+    readonly content: string | readonly { text: string; type: "text" }[];
+    readonly id?: string;
+    readonly role: "user" | "assistant";
+    readonly stop_reason?: string;
+  };
+  readonly origin?: { readonly kind: string };
+  readonly timestamp: string;
+  readonly type: "user" | "assistant";
+  readonly uuid: string;
+}
+
+const long = sessionId("long");
 const tools = sessionId("tools");
 const waiting = sessionId("waiting");
 const working = sessionId("working");
@@ -49,7 +67,7 @@ describe("Done and Settled over the oRPC WebSocket", () => {
           expect(find(before, waiting)?.lastViewedAt).toBeNull();
 
           const phone = yield* clientOf(server.token);
-          yield* call(() => phone.sessions.markViewed({ id: waiting }));
+          yield* glance(phone, waiting);
 
           const after = yield* other.next(
             (list) => find(list, waiting)?.lastViewedAt !== null
@@ -146,13 +164,13 @@ describe("the web app and the Android app", () => {
 
         // The phone opened the session before its last turn ended.
         clock.now = Date.parse("2026-01-15T08:00:00.000Z");
-        yield* call(() => phone.client.sessions.markViewed({ id: waiting }));
+        yield* glance(phone.client, waiting);
         yield* web.sees(waiting, { mark: "done", section: "main" });
         yield* phone.sees(waiting, { mark: "done", section: "main" });
 
         // Opening it in the browser clears Done on the phone.
         clock.now = fixtureNow;
-        yield* call(() => web.client.sessions.markViewed({ id: waiting }));
+        yield* glance(web.client, waiting);
         yield* phone.sees(waiting, { mark: "time", section: "main" });
 
         // Settled on the phone, un-settled in the browser.
@@ -161,6 +179,173 @@ describe("the web app and the Android app", () => {
 
         yield* call(() => web.client.sessions.unsettle({ id: waiting }));
         yield* phone.sees(waiting, { mark: "time", section: "main" });
+      })
+    );
+  });
+});
+
+describe("a turn that ends while the session is open", () => {
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect("never shows as Done on another client", () =>
+      Effect.gen(function* viewedWhileOpen() {
+        const { claude, clock, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
+
+        // A fresh list model for each list, so no Working grace hides Done.
+        const markOf = (list: SessionList) =>
+          placeOf(
+            createSessionList().update(list.sessions, clock.now).view,
+            long
+          )?.mark;
+
+        // Every list the web app is sent, until `until` passes; none may
+        // show the open session as Done.
+        const shownDone: SessionList[] = [];
+
+        const receive = (until: (list: SessionList) => boolean) =>
+          watch.next((list) => {
+            if (markOf(list) === "done") {
+              shownDone.push(list);
+            }
+
+            return until(list);
+          });
+
+        // The phone opens the session.
+        const phone = yield* clientOf(server.token);
+        const stopViewing = keepViewing(phone, long);
+        yield* receive(
+          (list) => find(list, long)?.lastViewedAt === fixtureNowIso
+        );
+
+        const transcript = path.join(
+          claude,
+          "projects",
+          "-Users-nico-code-notes-site",
+          `${long}.jsonl`
+        );
+
+        const append = (line: ClaudeLine) =>
+          Effect.promise(() =>
+            appendFile(transcript, `${JSON.stringify(line)}\n`)
+          );
+
+        const envelope = {
+          cwd: "/Users/nico/code/notes.site",
+          sessionId: long,
+        };
+
+        yield* append({
+          ...envelope,
+          message: { content: "Now tidy post 20.", role: "user" },
+          origin: { kind: "human" },
+          timestamp: "2026-01-15T12:00:01.000Z",
+          type: "user",
+          uuid: "0d8a7a52-0000-4000-8000-000000000003",
+        });
+        yield* receive((list) => find(list, long)?.status === "working");
+
+        yield* append({
+          ...envelope,
+          message: {
+            content: [{ text: "Post 20 is tidy.", type: "text" }],
+            id: "msg_0000000000000000000000f6",
+            role: "assistant",
+            stop_reason: "end_turn",
+          },
+          timestamp: "2026-01-15T12:00:09.000Z",
+          type: "assistant",
+          uuid: "0d8a7a52-0000-4000-8000-000000000004",
+        });
+        yield* receive(
+          (list) =>
+            find(list, long)?.turnEndedAt === "2026-01-15T12:00:09.000Z" &&
+            find(list, long)?.status === "waiting"
+        );
+
+        // The phone closes it (or goes to the background) a minute later.
+        clock.now = Date.parse("2026-01-15T12:01:00.000Z");
+        stopViewing();
+
+        const closed = yield* receive(
+          (list) =>
+            find(list, long)?.lastViewedAt === "2026-01-15T12:01:00.000Z"
+        );
+
+        expect(markOf(closed)).toBe("time");
+        expect(shownDone).toEqual([]);
+      })
+    );
+  });
+});
+
+describe("a phone that goes silent while a session is open", () => {
+  it.layer(Fixture.make({ silentSocketTimeout: "300 millis" }), {
+    excludeTestServices: true,
+  })((test) => {
+    test.effect("stops holding it open once the server drops its socket", () =>
+      Effect.gen(function* silentPhone() {
+        const { clock, server } = yield* Fixture;
+
+        /** A connection that closes with the test. */
+        const opened = (options: Partial<ConnectOptions>) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              connect({
+                server: server.origin,
+                token: server.token,
+                ...options,
+              })
+            ),
+            (connection) => Effect.sync(() => connection.close())
+          );
+
+        // The web app pings often enough to stay connected.
+        const web = (yield* opened({ pingIntervalMs: 50 })).client;
+
+        const lists = yield* Effect.acquireRelease(
+          call(() => web.sessions.watch()),
+          (iterator) => Effect.promise(async () => await iterator.return?.())
+        );
+
+        const until = (pass: (list: SessionList) => boolean) =>
+          Effect.promise(async () => {
+            for (;;) {
+              // oxlint-disable-next-line no-await-in-loop -- each list waits for the one before.
+              const result = await lists.next();
+
+              if (result.done === true) {
+                throw new Error("The session list ended");
+              }
+
+              if (pass(result.value)) {
+                return result.value;
+              }
+            }
+          }).pipe(Effect.timeout("3 seconds"));
+
+        // The phone opens the session, then its network dies: it sends
+        // nothing more, and never closes its socket.
+        const phone = yield* opened({
+          pingIntervalMs: 60_000,
+          pingTimeoutMs: 60_000,
+          retryDelayMs: 60_000,
+        });
+
+        yield* Effect.acquireRelease(
+          Effect.sync(() => keepViewing(phone.client, long)),
+          (stop) => Effect.sync(stop)
+        );
+        yield* until(
+          (list) => find(list, long)?.lastViewedAt === fixtureNowIso
+        );
+
+        // The hold ends, which marks it viewed again, at the new time.
+        clock.now = Date.parse("2026-01-15T12:01:00.000Z");
+        yield* until(
+          (list) =>
+            find(list, long)?.lastViewedAt === "2026-01-15T12:01:00.000Z"
+        );
       })
     );
   });
@@ -217,9 +402,15 @@ describe("Balcony's state on the Mac", () => {
     test.effect("survives a restart", () =>
       Effect.gen(function* survivesRestart() {
         const { home, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
         const phone = yield* clientOf(server.token);
-        yield* call(() => phone.sessions.markViewed({ id: working }));
+        yield* glance(phone, working);
         yield* call(() => phone.sessions.settle({ id: tools }));
+        yield* watch.next(
+          (list) =>
+            find(list, working)?.lastViewedAt === fixtureNowIso &&
+            find(list, tools)?.settledAt === fixtureNowIso
+        );
 
         const restarted = yield* startServer({
           home,
@@ -246,7 +437,7 @@ describe("Balcony's state on the Mac", () => {
         const before = yield* snapshotFiles(claude);
 
         const phone = yield* clientOf(server.token);
-        yield* call(() => phone.sessions.markViewed({ id: waiting }));
+        yield* glance(phone, waiting);
         yield* call(() => phone.sessions.settle({ id: waiting }));
         yield* call(() => phone.sessions.unsettle({ id: waiting }));
         yield* watch.next((list) => find(list, waiting)?.unsettledAt !== null);

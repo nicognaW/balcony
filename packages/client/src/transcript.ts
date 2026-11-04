@@ -145,3 +145,39 @@ export const spaceAbove = (
 
   return isStep(previous) && isStep(entry) ? "tight" : "loose";
 };
+
+/** How much of a long file name stays at its end: enough for the extension. */
+const NAME_END = 10;
+
+export interface FileNameParts {
+  /** The folder the file is in, shown dimmed after its name. */
+  readonly folder: string | undefined;
+  /** The whole file name, for a view that cuts it in the middle itself. */
+  readonly name: string;
+  /** The start of the file name, cut short (at its end) when it doesn't fit. */
+  readonly nameStart: string;
+  /** The end of the file name with its extension, always shown in full. */
+  readonly nameEnd: string;
+}
+
+/**
+ * A file-change row's path, split so a long file name is cut in the middle
+ * and keeps its extension: the rows show `nameStart` (truncated), then
+ * `nameEnd`, then the folder.
+ */
+export const fileNameParts = (path: string): FileNameParts => {
+  const slash = path.lastIndexOf("/");
+  // Code points, so an emoji is never cut in two.
+  const whole = path.slice(slash + 1);
+  const name: readonly string[] = whole.match(/./gsu) ?? [];
+  const dot = name.lastIndexOf(".");
+  const extension = dot > 0 ? name.length - dot : 0;
+  const cut = Math.max(0, name.length - Math.max(NAME_END, extension));
+
+  return {
+    folder: slash > 0 ? path.slice(0, slash) : undefined,
+    name: whole,
+    nameEnd: name.slice(cut).join(""),
+    nameStart: name.slice(0, cut).join(""),
+  };
+};
