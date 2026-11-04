@@ -117,7 +117,7 @@ finger_swipe() {
   sleep 0.5
   shot "$3"
   adb shell input motionevent UP $((x - $2)) "$y"
-  sleep 2
+  sleep 1
 }
 
 scroll_to_end() {
@@ -172,8 +172,16 @@ pass() {
   shot "busy-day-finger-released-short$suffix"
   finger_swipe "Review PR #482: rate limiting per token" 640 \
     "busy-day-finger-swipe-armed$suffix"
+  # The notice lasts 5s: find Undo with one look, before the screenshot.
+  undo=$(centre_of "Undo" || true)
   shot "busy-day-finger-settled-undo$suffix"
-  tap "Undo"
+  if [ -n "$undo" ]; then
+    # shellcheck disable=SC2086
+    adb shell input tap $undo
+    sleep 2
+  else
+    shot "missing-Undo"
+  fi
   shot "busy-day-finger-undone$suffix"
   adb shell settings put global animator_duration_scale 1
   adb shell settings put global transition_animation_scale 1
