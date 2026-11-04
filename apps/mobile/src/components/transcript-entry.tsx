@@ -2,6 +2,7 @@
 // as bubbles on the right, agent text as markdown, and the agent's steps as
 // compact one-line work rows (adapted from T3 Code's WorkLog, MIT,
 // (c) 2026 T3 Tools Inc.).
+import { fileNameParts } from "@balcony/client/transcript";
 import type { TranscriptEntry } from "@balcony/contracts";
 import {
   BanIcon,
@@ -43,15 +44,42 @@ const Detail = ({ children }: { readonly children: string | undefined }) =>
     <Text className="text-muted-foreground text-xs">{`  ${children}`}</Text>
   );
 
-/** A path as its file name, then the folder it is in, dimmed. */
-const FilePath = ({ path }: { readonly path: string }) => {
-  const slash = path.lastIndexOf("/");
+/**
+ * A file-change row: the file name, cut in the middle when it doesn't fit so
+ * its extension stays, then the folder it is in, dimmed, which gives way
+ * first.
+ */
+const FileRow = ({ path }: { readonly path: string }) => {
+  const { folder, nameEnd, nameStart } = fileNameParts(path);
 
   return (
-    <>
-      <Text className="text-foreground">{path.slice(slash + 1)}</Text>
-      <Detail>{slash > 0 ? path.slice(0, slash) : undefined}</Detail>
-    </>
+    <View
+      accessibilityLabel={path}
+      accessible
+      className="min-w-0 flex-row items-center gap-2"
+    >
+      <View className="size-6 items-center justify-center">
+        <Icon icon={SquarePenIcon} size={14} />
+      </View>
+      <View className="min-w-0 flex-1 flex-row items-baseline">
+        <View className="max-w-full shrink-0 flex-row">
+          <Text className="text-foreground shrink text-sm" numberOfLines={1}>
+            {nameStart}
+          </Text>
+          <Text className="text-foreground text-sm" numberOfLines={1}>
+            {nameEnd}
+          </Text>
+        </View>
+        {folder === undefined ? null : (
+          <Text
+            className="text-muted-foreground flex-1 text-xs"
+            numberOfLines={1}
+          >
+            {`  ${folder}`}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 };
 
@@ -79,11 +107,7 @@ export const TranscriptEntryRow = ({
     }
 
     case "file-change": {
-      return (
-        <WorkRow icon={SquarePenIcon}>
-          <FilePath path={entry.path} />
-        </WorkRow>
-      );
+      return <FileRow path={entry.path} />;
     }
 
     case "command-run": {

@@ -3,7 +3,11 @@
 import type { TranscriptEntry, TranscriptPage } from "@balcony/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { joinTranscript, liveArrivals } from "../src/transcript.ts";
+import {
+  fileNameParts,
+  joinTranscript,
+  liveArrivals,
+} from "../src/transcript.ts";
 import type { TranscriptView } from "../src/transcript.ts";
 
 /** Entries numbered `from` up to (not including) `to`. */
@@ -119,5 +123,59 @@ describe("entries that arrive live", () => {
     const again = { ...latest, entries: entries(45, 65) };
 
     expect(liveArrivals([latest, again], shown(40, 60)).size).toBe(0);
+  });
+});
+
+describe("a file-change row's path", () => {
+  it("keeps the end of a long file name, with its extension, for truncating in the middle", () => {
+    expect(
+      fileNameParts(
+        "apps/mobile/src/SessionListRowWithAVeryLongComponentName.tsx"
+      )
+    ).toEqual({
+      folder: "apps/mobile/src",
+      nameEnd: "ntName.tsx",
+      nameStart: "SessionListRowWithAVeryLongCompone",
+    });
+    expect(
+      fileNameParts(
+        "Q3 Board Deck — FINAL (revised) v12 [approved by legal].pdf"
+      )
+    ).toEqual({
+      folder: undefined,
+      nameEnd: "legal].pdf",
+      nameStart: "Q3 Board Deck — FINAL (revised) v12 [approved by ",
+    });
+  });
+
+  it("keeps a short file name whole", () => {
+    expect(fileNameParts("README.md")).toEqual({
+      folder: undefined,
+      nameEnd: "README.md",
+      nameStart: "",
+    });
+    expect(fileNameParts("/etc/hosts")).toEqual({
+      folder: "/etc",
+      nameEnd: "hosts",
+      nameStart: "",
+    });
+  });
+
+  it("keeps a long extension whole, and never splits a character", () => {
+    expect(fileNameParts("backup.20261104-full.tar.gz.encrypted")).toEqual({
+      folder: undefined,
+      nameEnd: ".encrypted",
+      nameStart: "backup.20261104-full.tar.gz",
+    });
+    expect(fileNameParts("archive.verylongextension")).toEqual({
+      folder: undefined,
+      nameEnd: ".verylongextension",
+      nameStart: "archive",
+    });
+    expect(fileNameParts("🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀.md")).toEqual({
+      folder: undefined,
+      nameEnd: "🚀🚀🚀🚀🚀🚀🚀.md",
+      nameStart: "🚀🚀🚀🚀🚀",
+    });
   });
 });
