@@ -438,6 +438,54 @@ describe("a session whose agent crashed mid-turn", () => {
   });
 
   it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
+    test.effect(
+      "shows Waiting once a prompt it never answered is a few minutes old",
+      () =>
+        Effect.gen(function* crashedBeforeReply() {
+          const { claude, clock, server } = yield* Fixture;
+          const watch = yield* watchSessions(server.token);
+          yield* watch.next();
+
+          // The long session has no status file. The user types a prompt and
+          // the agent dies before writing anything back.
+          const prompt = {
+            cwd: "/Users/nico/code/notes.site",
+            message: { content: "Now tidy post 21.", role: "user" },
+            origin: { kind: "human" },
+            sessionId: fixtureSessions.long,
+            timestamp: "2026-01-15T12:00:01.000Z",
+            type: "user",
+            uuid: "0d8a7a52-0000-4000-8000-000000000007",
+          };
+
+          yield* Effect.promise(() =>
+            appendFile(
+              path.join(
+                claude,
+                "projects",
+                "-Users-nico-code-notes-site",
+                `${fixtureSessions.long}.jsonl`
+              ),
+              `${JSON.stringify(prompt)}\n`
+            )
+          );
+
+          yield* watch.next(
+            (list) =>
+              find(list, fixtureSessions.long)?.lastMessageAt ===
+                "2026-01-15T12:00:01.000Z" &&
+              find(list, fixtureSessions.long)?.status === "working"
+          );
+
+          clock.now = Date.parse("2026-01-15T12:05:02.000Z");
+          yield* watch.next(
+            (list) => find(list, fixtureSessions.long)?.status === "waiting"
+          );
+        })
+    );
+  });
+
+  it.layer(Fixture.make(), { excludeTestServices: true })((test) => {
     test.effect("stays Working while its live status file says busy", () =>
       Effect.gen(function* busyWins() {
         const { clock, server } = yield* Fixture;

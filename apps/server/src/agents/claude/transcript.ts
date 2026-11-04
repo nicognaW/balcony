@@ -80,10 +80,11 @@ export interface TranscriptSummary {
   /** Whether a turn has begun and not ended. */
   readonly inTurn: boolean;
   /**
-   * When the agent wrote the newest user or agent line, if that line left the
-   * turn open: a reply cut off mid-stream or a tool call with no result yet.
+   * When the newest user or agent line was written, if the turn is still open
+   * after it: a prompt or tool result not yet answered, a reply cut off
+   * mid-stream, or a tool call with no result yet.
    */
-  readonly unfinishedAgentLineAt: string | undefined;
+  readonly openTurnLineAt: string | undefined;
   /** The agent message that ended the last turn; its later lines don't start one. */
   readonly endingMessageId: string | undefined;
 }
@@ -98,10 +99,10 @@ export const emptySummary: TranscriptSummary = {
   inTurn: false,
   lastMessageAt: undefined,
   lastUserMessageAt: undefined,
+  openTurnLineAt: undefined,
   summary: undefined,
   turnEndedAt: undefined,
   turnStartedAt: undefined,
-  unfinishedAgentLineAt: undefined,
 };
 
 const MAX_TITLE = 200;
@@ -289,8 +290,7 @@ const foldMessage = (
     ...turn,
     lastMessageAt: newest(summary.lastMessageAt, at),
     lastUserMessageAt: prompt === undefined ? summary.lastUserMessageAt : at,
-    unfinishedAgentLineAt:
-      line.type === "assistant" && turn.inTurn ? at : undefined,
+    openTurnLineAt: turn.inTurn ? at : undefined,
   };
 };
 
@@ -318,7 +318,7 @@ const foldTranscriptLine = (
             ...startTurn(summary, at),
             branch,
             cwd,
-            unfinishedAgentLineAt: undefined,
+            openTurnLineAt: at,
           }
         : { ...summary, branch, cwd };
     }
@@ -364,17 +364,19 @@ export const titleOf = (summary: TranscriptSummary): string =>
   "Untitled session";
 
 /**
- * How long an unfinished reply or tool call may sit as the Transcript's last
- * line before the agent is taken to have crashed. Claude writes nothing while
- * a tool runs, so a command or foreground subagent that runs longer than this
- * shows Waiting too, when there is no status file to say otherwise.
+ * How long an open turn's last line (a prompt or tool result not yet
+ * answered, an unfinished reply or tool call) may sit before the agent is
+ * taken to have crashed. Claude writes nothing while a tool runs or while the
+ * model works on its first block, so a command or foreground subagent that
+ * runs longer than this shows Waiting too, when there is no status file to
+ * say otherwise.
  */
 export const CRASHED_AFTER_MS = 5 * 60 * 1000;
 
 /**
  * Working or Waiting as the transcript tells it at `now` (epoch ms): Working
- * while the latest turn hasn't ended, unless it stopped on an unfinished agent
- * line that is older than {@link CRASHED_AFTER_MS}. Used when Claude's status
+ * while the latest turn hasn't ended, unless its last line is older than
+ * {@link CRASHED_AFTER_MS}. Used when Claude's status
  * file can't be trusted.
  */
 export const statusOf = (
@@ -385,7 +387,7 @@ export const statusOf = (
     return "waiting";
   }
 
-  const stalledAt = summary.unfinishedAgentLineAt;
+  const stalledAt = summary.openTurnLineAt;
 
   return stalledAt !== undefined &&
     now - Date.parse(stalledAt) > CRASHED_AFTER_MS

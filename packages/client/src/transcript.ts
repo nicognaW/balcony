@@ -88,15 +88,10 @@ export const pagingAnchor = (
 ): string | undefined =>
   live.entries.some((entry) => entry.id === anchor) ? anchor : undefined;
 
-/** Agent text with nothing to show, which would only leave a gap. */
-const isBlank = (entry: TranscriptEntry) =>
-  entry.kind === "agent-text" && entry.text.trim() === "";
-
 /**
  * The whole Transcript loaded so far: earlier pages (in the order they were
  * loaded, newest first, from `anchor` back) before the live tail, oldest
- * first, each entry once. Pages the live tail no longer reaches are left out,
- * as is agent text with nothing in it.
+ * first, each entry once. Pages the live tail no longer reaches are left out.
  */
 export const joinTranscript = (
   live: TranscriptView,
@@ -104,10 +99,7 @@ export const joinTranscript = (
   anchor: string | undefined
 ): TranscriptView => {
   if (pagingAnchor(live, anchor) === undefined) {
-    return {
-      entries: live.entries.filter((entry) => !isBlank(entry)),
-      hasEarlier: live.hasEarlier,
-    };
+    return live;
   }
 
   const seen = new Set<string>();
@@ -115,7 +107,7 @@ export const joinTranscript = (
 
   const add = (page: readonly TranscriptEntry[]) => {
     for (const entry of page) {
-      if (!seen.has(entry.id) && !isBlank(entry)) {
+      if (!seen.has(entry.id)) {
         seen.add(entry.id);
         entries.push(entry);
       }
@@ -160,6 +152,8 @@ const NAME_END = 10;
 export interface FileNameParts {
   /** The folder the file is in, shown dimmed after its name. */
   readonly folder: string | undefined;
+  /** The whole file name, for a view that cuts it in the middle itself. */
+  readonly name: string;
   /** The start of the file name, cut short (at its end) when it doesn't fit. */
   readonly nameStart: string;
   /** The end of the file name with its extension, always shown in full. */
@@ -174,13 +168,15 @@ export interface FileNameParts {
 export const fileNameParts = (path: string): FileNameParts => {
   const slash = path.lastIndexOf("/");
   // Code points, so an emoji is never cut in two.
-  const name: readonly string[] = path.slice(slash + 1).match(/./gsu) ?? [];
+  const whole = path.slice(slash + 1);
+  const name: readonly string[] = whole.match(/./gsu) ?? [];
   const dot = name.lastIndexOf(".");
   const extension = dot > 0 ? name.length - dot : 0;
   const cut = Math.max(0, name.length - Math.max(NAME_END, extension));
 
   return {
     folder: slash > 0 ? path.slice(0, slash) : undefined,
+    name: whole,
     nameEnd: name.slice(cut).join(""),
     nameStart: name.slice(0, cut).join(""),
   };

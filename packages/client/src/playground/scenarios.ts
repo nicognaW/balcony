@@ -380,7 +380,6 @@ const everyKind = (id: string, endsAt: string) =>
     user("Line one\nLine two\n\n<script>alert(1)</script> &amp; **not bold**"),
     user("👍🏽"),
     user("j"),
-    agent(""),
     agent("ok"),
     edit(
       "apps/mobile/src/features/sessions/components/very/deeply/nested/folder/structure/that/keeps/going/SessionListRowWithAVeryLongComponentName.tsx"

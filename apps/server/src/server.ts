@@ -1,12 +1,13 @@
 // The Balcony server: the oRPC API over WebSocket at /rpc and the built web
 // app, on one port. It runs while its scope is open.
+import { isIP } from "node:net";
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PING, PONG } from "@balcony/contracts";
 import { RPCHandler } from "@orpc/server/websocket";
-import { Effect, Layer } from "effect";
-import type { Duration } from "effect";
+import { Duration, Effect, Layer } from "effect";
 
 import { AgentSources } from "./agents/agent-source.ts";
 import { makeClaudeSource } from "./agents/claude/claude-source.ts";
@@ -30,6 +31,11 @@ export interface ServerOptions {
   readonly pollInterval?: Duration.Input;
   /** The current time in epoch ms, for session activity and pairing code expiry. Defaults to `Date.now`. */
   readonly now?: () => number;
+  /**
+   * How long a socket may send nothing (clients ping every 5 seconds) before
+   * the server drops it, releasing what it held open. Defaults to 15 seconds.
+   */
+  readonly silentSocketTimeout?: Duration.Input;
   /** The built web app. Defaults to `apps/web/dist`. */
   readonly webRoot?: string;
 }
@@ -115,8 +121,46 @@ const allowedOrigin = (request: Request) => {
   }
 };
 
+/**
+ * Whether the Host a request asked for names this machine in a way DNS
+ * rebinding can't fake: an IP address, localhost, an mDNS `.local` name or the
+ * machine's own name. A page on `attacker.example` whose DNS later points at
+ * the Mac sends Host and Origin both `attacker.example`, so the Origin check
+ * alone would let it in.
+ */
+const allowedHost = (request: Request) => {
+  const host = request.headers.get("host");
+
+  if (host === null) {
+    return false;
+  }
+
+  let name: string;
+
+  try {
+    name = new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  // URL keeps the brackets round an IPv6 address.
+  const bare = name.startsWith("[") ? name.slice(1, -1) : name;
+  const machine = hostname().toLowerCase();
+
+  return (
+    isIP(bare) !== 0 ||
+    name === "localhost" ||
+    name.endsWith(".localhost") ||
+    name.endsWith(".local") ||
+    name === machine ||
+    name === `${machine}.local`
+  );
+};
+
 interface SocketData {
   readonly token: string | null;
+  /** When the client last sent anything (epoch ms, real time). */
+  heardAt: number;
 }
 
 export const startServer = Effect.fn("startServer")(function* startServer(
@@ -153,6 +197,33 @@ export const startServer = Effect.fn("startServer")(function* startServer(
   );
 
   const handler = new RPCHandler<RpcContext>(router);
+
+  // Clients ping every 5 seconds. A socket that stays silent longer belongs
+  // to a phone whose network died without a close; dropping it releases the
+  // Transcripts it held open (`sessions.view`), so Done shows again.
+  const silentAfterMs = Duration.toMillis(
+    Duration.fromInputUnsafe(options.silentSocketTimeout ?? "15 seconds")
+  );
+
+  const sockets = new Set<Bun.ServerWebSocket<SocketData>>();
+
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      setInterval(
+        () => {
+          const silentSince = Date.now() - silentAfterMs;
+
+          for (const socket of sockets) {
+            if (socket.data.heardAt < silentSince) {
+              socket.close(4000, "Silent");
+            }
+          }
+        },
+        Math.max(10, silentAfterMs / 3)
+      )
+    ),
+    (sweeper) => Effect.sync(() => clearInterval(sweeper))
+  );
   const webRoot = path.normalize(options.webRoot ?? defaultWebRoot);
 
   const server = yield* Effect.acquireRelease(
@@ -164,14 +235,17 @@ export const startServer = Effect.fn("startServer")(function* startServer(
           if (url.pathname === "/rpc") {
             // Pairing is open to anyone who connects; pages on other sites
             // must not be able to guess codes or lock them.
-            if (!allowedOrigin(request)) {
+            if (!allowedHost(request) || !allowedOrigin(request)) {
               return new Response("Forbidden origin", { status: 403 });
             }
 
             // Browsers can't set WebSocket headers, so the token travels as a
             // query parameter. The `authed` middleware checks it on each call.
             const upgraded = bun.upgrade(request, {
-              data: { token: url.searchParams.get("token") },
+              data: {
+                heardAt: Date.now(),
+                token: url.searchParams.get("token"),
+              },
             });
 
             return upgraded
@@ -185,9 +259,12 @@ export const startServer = Effect.fn("startServer")(function* startServer(
         port: options.port,
         websocket: {
           close: (socket) => {
+            sockets.delete(socket);
             handler.close(socket);
           },
           message: (socket, message) => {
+            socket.data.heardAt = Date.now();
+
             // The client's keepalive: it drops a socket that stays silent.
             if (message === PING) {
               socket.send(PONG);
@@ -202,6 +279,9 @@ export const startServer = Effect.fn("startServer")(function* startServer(
                 token: socket.data.token,
               },
             });
+          },
+          open: (socket) => {
+            sockets.add(socket);
           },
         },
       })

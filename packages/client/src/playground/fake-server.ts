@@ -253,12 +253,6 @@ export const createPlayground = ({
       }),
     },
     sessions: {
-      markViewed: os.sessions.markViewed
-        .use(opened)
-        .use(accepted)
-        .handler(({ input }) => {
-          update(input.id, (target) => ({ ...target, lastViewedAt: iso() }));
-        }),
       settle: os.sessions.settle
         .use(opened)
         .use(accepted)

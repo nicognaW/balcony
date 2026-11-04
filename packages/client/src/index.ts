@@ -268,8 +268,6 @@ interface WatchedSocket {
   readonly socket: WebSocketLike;
   /** Closes the real socket and reports it closed now. */
   readonly drop: (reason: string) => void;
-  /** Drops the socket unless a frame arrives within `ms`. */
-  readonly expectTraffic: (ms: number) => void;
   /**
    * Pings an open socket now, and drops it (open or still opening) unless
    * a frame arrives within `ms`.
@@ -281,9 +279,9 @@ const watchSocket = (
   real: ClientSocket,
   events: {
     readonly onOpen: () => void;
-    readonly onTraffic: () => void;
     readonly onClose: () => void;
-  }
+  },
+  ping: { readonly intervalMs: number; readonly timeoutMs: number }
 ): WatchedSocket => {
   let listeners: readonly {
     readonly type: string;
@@ -291,8 +289,10 @@ const watchSocket = (
   }[] = [];
 
   let ended = false;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  let deadlineAt = Number.POSITIVE_INFINITY;
+  let heardAt = Date.now();
+  /** Frames received (and the open), so a probe can tell whether any came after it. */
+  let heard = 0;
+  let probeDeadline: ReturnType<typeof setTimeout> | undefined;
 
   const emit = (event: Event) => {
     for (const { listener, type } of listeners) {
@@ -314,7 +314,7 @@ const watchSocket = (
     }
 
     ended = true;
-    clearTimeout(deadline);
+    clearTimeout(probeDeadline);
     events.onClose();
     emit(event);
   };
@@ -324,6 +324,8 @@ const watchSocket = (
       return;
     }
 
+    heardAt = Date.now();
+    heard += 1;
     events.onOpen();
     emit(event);
   });
@@ -332,7 +334,8 @@ const watchSocket = (
       return;
     }
 
-    events.onTraffic();
+    heardAt = Date.now();
+    heard += 1;
 
     if (event.data !== PONG) {
       emit(event);
@@ -361,15 +364,21 @@ const watchSocket = (
     end(droppedEvent(reason));
   };
 
-  const expectTraffic = (ms: number) => {
-    clearTimeout(deadline);
-    deadlineAt = Date.now() + ms;
-    deadline = setTimeout(() => drop("No answer to pings"), ms);
-  };
+  // Pings an open socket, and drops one that has been silent for the ping
+  // timeout, or that never opens (the network under it is gone). It stops on
+  // its next tick once the socket has ended.
+  const pinger = setInterval(() => {
+    if (ended) {
+      clearInterval(pinger);
+    } else if (Date.now() - heardAt >= ping.timeoutMs) {
+      drop("No answer to pings");
+    } else if (real.readyState === OPEN) {
+      real.send(PING);
+    }
+  }, ping.intervalMs);
 
   return {
     drop,
-    expectTraffic,
     probe: (ms) => {
       if (ended) {
         return;
@@ -379,9 +388,19 @@ const watchSocket = (
         real.send(PING);
       }
 
-      if (deadlineAt - Date.now() > ms) {
-        expectTraffic(ms);
+      // An earlier probe still waiting keeps its sooner deadline.
+      if (probeDeadline !== undefined) {
+        return;
       }
+
+      const heardBefore = heard;
+      probeDeadline = setTimeout(() => {
+        probeDeadline = undefined;
+
+        if (heard === heardBefore) {
+          drop("No answer to the wakeup ping");
+        }
+      }, ms);
     },
     socket,
   };
@@ -457,27 +476,20 @@ export const connect = ({
 
       const real = openSocket(rpcUrl(server, token));
       real.binaryType = "arraybuffer";
-      let pinger: ReturnType<typeof setInterval> | undefined;
 
-      const watched = watchSocket(real, {
-        onClose: () => {
-          clearInterval(pinger);
-
-          if (state === "connected") {
-            setState("reconnecting");
-          }
+      const watched = watchSocket(
+        real,
+        {
+          onClose: () => {
+            if (state === "connected") {
+              setState("reconnecting");
+            }
+          },
+          onOpen: () => setState("connected"),
         },
-        onOpen: () => {
-          setState("connected");
-          watched.expectTraffic(pingTimeoutMs);
-          pinger = setInterval(() => real.send(PING), pingIntervalMs);
-        },
-        onTraffic: () => watched.expectTraffic(pingTimeoutMs),
-      });
+        { intervalMs: pingIntervalMs, timeoutMs: pingTimeoutMs }
+      );
 
-      // A socket that never opens (the network under it is gone) is
-      // dropped too.
-      watched.expectTraffic(pingTimeoutMs);
       current = watched;
 
       return watched.socket;

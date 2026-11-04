@@ -96,7 +96,11 @@ const parseEntries = (known: Entries, bytes: Uint8Array): Entries => {
  */
 const OLD_FILE_RECHECK_SCANS = 10;
 
-/** How many transcripts keep their entries in memory for paging and watching. */
+/**
+ * How many transcripts no one is watching keep their entries in memory, for
+ * paging. Watched ones always keep theirs, so each poll reads only what was
+ * appended however many are open.
+ */
 const ENTRY_CACHE_SIZE = 8;
 
 export const makeClaudeSource = Effect.fn("makeClaudeSource")(
@@ -110,6 +114,20 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const sessionsDir = path.join(claudeDir, "sessions");
     const transcripts = new Map<string, ReadState<TranscriptSummary>>();
     const entryCache = new Map<string, ReadState<Entries>>();
+    /** How many open Transcript streams follow each file. */
+    const watchers = new Map<string, number>();
+
+    const watch = (file: string, by: 1 | -1) =>
+      Effect.sync(() => {
+        const count = (watchers.get(file) ?? 0) + by;
+
+        if (count > 0) {
+          watchers.set(file, count);
+        } else {
+          watchers.delete(file);
+        }
+      });
+
     /** Transcript files by session id, as the last scan listed them. */
     let filesById = new Map<string, readonly string[]>();
     /** Files last seen older than the window, and how many scans ago. */
@@ -242,12 +260,18 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       entryCache.delete(file);
       entryCache.set(file, state);
 
-      for (const stale of entryCache.keys()) {
-        if (entryCache.size <= ENTRY_CACHE_SIZE) {
+      // Oldest first; watched files stay, on top of the cache's size.
+      let unwatched = [...entryCache.keys()].filter(
+        (cached) => !watchers.has(cached)
+      );
+
+      for (const stale of unwatched) {
+        if (unwatched.length <= ENTRY_CACHE_SIZE) {
           break;
         }
 
         entryCache.delete(stale);
+        unwatched = unwatched.slice(1);
       }
 
       return state.value.list;
@@ -399,19 +423,24 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
       // A file that can't be read at all is no Transcript.
       const first = yield* Effect.option(readEntries(file.value));
 
+      const followed = Stream.fromEffectSchedule(
+        // Unreadable since (e.g. deleted): unchanged.
+        Effect.option(readEntries(file.value)),
+        Schedule.spaced(pollInterval)
+      ).pipe(
+        Stream.filter(Option.isSome),
+        Stream.map((read) => read.value)
+      );
+
       return first.pipe(
         Option.map((entries) =>
-          Stream.succeed(entries).pipe(
-            Stream.concat(
-              Stream.fromEffectSchedule(
-                // Unreadable since (e.g. deleted): unchanged.
-                Effect.option(readEntries(file.value)),
-                Schedule.spaced(pollInterval)
-              ).pipe(
-                Stream.filter(Option.isSome),
-                Stream.map((read) => read.value)
-              )
-            ),
+          Stream.unwrap(
+            Effect.as(
+              watch(file.value, 1),
+              Stream.succeed(entries).pipe(Stream.concat(followed))
+            )
+          ).pipe(
+            Stream.ensuring(watch(file.value, -1)),
             Stream.changesWith((a, b) => a === b)
           )
         )
