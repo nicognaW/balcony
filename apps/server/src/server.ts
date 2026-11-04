@@ -3,6 +3,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PING, PONG } from "@balcony/contracts";
 import { RPCHandler } from "@orpc/server/websocket";
 import { Effect, Layer } from "effect";
 import type { Duration } from "effect";
@@ -187,6 +188,13 @@ export const startServer = Effect.fn("startServer")(function* startServer(
             handler.close(socket);
           },
           message: (socket, message) => {
+            // The client's keepalive: it drops a socket that stays silent.
+            if (message === PING) {
+              socket.send(PONG);
+
+              return;
+            }
+
             void handler.message(socket, message, {
               context: {
                 "effect/context": context,

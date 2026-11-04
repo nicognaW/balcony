@@ -51,5 +51,27 @@ describe("a connection", () => {
         expect(states).not.toContain("connected");
       })
     );
+
+    test.effect("stays open while idle: the server answers pings", () =>
+      Effect.gen(function* idle() {
+        const { server } = yield* Fixture;
+
+        const connection = connect({
+          pingIntervalMs: 20,
+          pingTimeoutMs: 100,
+          retryDelayMs: 20,
+          server: server.origin,
+          token: server.token,
+        });
+
+        yield* untilConnected(connection);
+        const states = recordStates(connection);
+        yield* Effect.sleep("500 millis");
+        const whileOpen = [...states];
+        connection.close();
+
+        expect(whileOpen).toEqual([]);
+      })
+    );
   });
 });
