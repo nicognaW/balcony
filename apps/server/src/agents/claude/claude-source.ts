@@ -453,7 +453,8 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
     const scan = Effect.gen(function* scan() {
       const statuses = yield* readStatuses;
       const byId = new Map<string, SourceSession>();
-      const cutoff = now() - LIST_WINDOW_MS;
+      const scannedAt = now();
+      const cutoff = scannedAt - LIST_WINDOW_MS;
 
       for (const { id, projectDir, summary } of yield* readTranscripts(
         cutoff
@@ -485,8 +486,9 @@ export const makeClaudeSource = Effect.fn("makeClaudeSource")(
           project:
             summary.cwd === undefined ? projectDir : path.basename(summary.cwd),
           // The status file is undocumented and may be missing, torn, stale or
-          // in a new format; then the transcript says whether a turn is open.
-          status: statuses.get(id)?.status ?? statusOf(summary),
+          // in a new format; then the transcript says whether a turn is open,
+          // and whether the agent crashed in the middle of it.
+          status: statuses.get(id)?.status ?? statusOf(summary, scannedAt),
           title: titleOf(summary),
           turnEndedAt: summary.turnEndedAt ?? null,
           turnStartedAt: summary.turnStartedAt ?? null,
