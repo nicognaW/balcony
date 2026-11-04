@@ -91,12 +91,6 @@ export const router = os.router({
     }),
   },
   sessions: {
-    markViewed: os.sessions.markViewed.use(authed).effect(function* markViewed({
-      input,
-    }) {
-      const marks = yield* SessionMarks;
-      yield* marks.markViewed(input.id);
-    }),
     // Settling only changes Balcony's marks; the agent is never told.
     settle: os.sessions.settle.use(authed).effect(function* settle({ input }) {
       const marks = yield* SessionMarks;

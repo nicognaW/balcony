@@ -132,11 +132,6 @@ export const contract = {
       .output(std(PairingToken)),
   },
   sessions: {
-    /**
-     * Records that the user opened the session now, which clears Done on
-     * every client.
-     */
-    markViewed: oc.input(std(SessionRef)),
     /** Moves the session to Settled until it has new activity. Claude is not told. */
     settle: oc.input(std(SessionRef)),
     /** Moves a Settled session back to the main list. */

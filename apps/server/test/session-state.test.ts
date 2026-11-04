@@ -17,6 +17,7 @@ import {
   clientOf,
   find,
   Fixture,
+  glance,
   snapshotFiles,
   watchSessions,
 } from "./fixture-server.ts";
@@ -66,7 +67,7 @@ describe("Done and Settled over the oRPC WebSocket", () => {
           expect(find(before, waiting)?.lastViewedAt).toBeNull();
 
           const phone = yield* clientOf(server.token);
-          yield* call(() => phone.sessions.markViewed({ id: waiting }));
+          yield* glance(phone, waiting);
 
           const after = yield* other.next(
             (list) => find(list, waiting)?.lastViewedAt !== null
@@ -163,13 +164,13 @@ describe("the web app and the Android app", () => {
 
         // The phone opened the session before its last turn ended.
         clock.now = Date.parse("2026-01-15T08:00:00.000Z");
-        yield* call(() => phone.client.sessions.markViewed({ id: waiting }));
+        yield* glance(phone.client, waiting);
         yield* web.sees(waiting, { mark: "done", section: "main" });
         yield* phone.sees(waiting, { mark: "done", section: "main" });
 
         // Opening it in the browser clears Done on the phone.
         clock.now = fixtureNow;
-        yield* call(() => web.client.sessions.markViewed({ id: waiting }));
+        yield* glance(web.client, waiting);
         yield* phone.sees(waiting, { mark: "time", section: "main" });
 
         // Settled on the phone, un-settled in the browser.
@@ -401,9 +402,15 @@ describe("Balcony's state on the Mac", () => {
     test.effect("survives a restart", () =>
       Effect.gen(function* survivesRestart() {
         const { home, server } = yield* Fixture;
+        const watch = yield* watchSessions(server.token);
         const phone = yield* clientOf(server.token);
-        yield* call(() => phone.sessions.markViewed({ id: working }));
+        yield* glance(phone, working);
         yield* call(() => phone.sessions.settle({ id: tools }));
+        yield* watch.next(
+          (list) =>
+            find(list, working)?.lastViewedAt === fixtureNowIso &&
+            find(list, tools)?.settledAt === fixtureNowIso
+        );
 
         const restarted = yield* startServer({
           home,
@@ -430,7 +437,7 @@ describe("Balcony's state on the Mac", () => {
         const before = yield* snapshotFiles(claude);
 
         const phone = yield* clientOf(server.token);
-        yield* call(() => phone.sessions.markViewed({ id: waiting }));
+        yield* glance(phone, waiting);
         yield* call(() => phone.sessions.settle({ id: waiting }));
         yield* call(() => phone.sessions.unsettle({ id: waiting }));
         yield* watch.next((list) => find(list, waiting)?.unsettledAt !== null);

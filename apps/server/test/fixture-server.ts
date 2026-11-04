@@ -4,7 +4,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { connect } from "@balcony/client";
-import type { Session, SessionList } from "@balcony/contracts";
+import type { BalconyClient, Session, SessionList } from "@balcony/contracts";
 import { BunServices } from "@effect/platform-bun";
 import { Context, Effect, Layer } from "effect";
 
@@ -121,6 +121,19 @@ export const clientOf = Effect.fn("clientOf")(function* clientOf(
 
   return connect({ server: server.origin, token }).client;
 });
+
+/**
+ * Opens a session's Transcript and closes it again, which marks it viewed
+ * (`sessions.view`).
+ */
+export const glance = (client: BalconyClient, id: string) =>
+  Effect.tryPromise({
+    catch: (error) => error,
+    try: async () => {
+      const held = await client.sessions.view({ id });
+      await held.return?.();
+    },
+  });
 
 /** Calls a client procedure, failing the Effect when the call does. */
 export const call = <A>(run: () => Promise<A>) =>
