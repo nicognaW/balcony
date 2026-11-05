@@ -11,6 +11,11 @@
             "type": "command",
             "command": "sh -c 'uncheck=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/node_modules/.bin/uncheck\"; [ -x \"$uncheck\" ] || exit 0; exec \"$uncheck\" hooks run --fix'",
             "timeout": 600
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'script=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/scripts/stop-hook-tests.sh\"; [ -f \"$script\" ] || exit 0; exec sh \"$script\"'",
+            "timeout": 300
           }
         ]
       }

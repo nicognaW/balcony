@@ -22,6 +22,35 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
+  # Compiles the Android bundle to Hermes bytecode on every push, so syntax
+  # Hermes can't parse fails here even when only server or shared code
+  # changed (android-apk.yml runs only on mobile paths).
+  android-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Expo CLI and Metro run on Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run --filter @balcony/mobile bundle
+        env:
+          CI: 1
+
   commit-messages:
     runs-on: ubuntu-latest
     steps:
