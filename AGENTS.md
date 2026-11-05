@@ -12,6 +12,11 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Reference
+
+- Effect, oRPC or Drizzle code, or bumping their versions: read `docs/agents/stack.md` first.
+- Reading Claude's `~/.claude` files (`apps/server/src/agents/claude`): read `docs/agents/claude-files.md` first.
+
 ## Commits
 
 Cloud sessions: the stop hook's "Unverified" warning is expected; leave commits as authored.

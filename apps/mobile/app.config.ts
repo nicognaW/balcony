@@ -28,6 +28,7 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "./plugins/with-local-cleartext.cjs",
+    "./plugins/with-gwp-asan-off.cjs",
   ],
   scheme: "balcony",
   slug: "balcony",
